@@ -37,6 +37,7 @@ struct WelcomeView: View {
                     .padding(.horizontal, 24)
 
                 NavigationLink {
+                    // Route to Authview so users can choose Sign in or Create account
                     Authview()
                 } label: {
                     Text("Get started")

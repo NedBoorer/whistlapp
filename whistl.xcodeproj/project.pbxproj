@@ -9,11 +9,13 @@
 /* Begin PBXBuildFile section */
 		881A3C9E2E6FC86900CE1BD2 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 881A3C9D2E6FC86900CE1BD2 /* FirebaseFirestore */; };
 		881A3CA02E6FCC9000CE1BD2 /* Brand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 881A3C9F2E6FCC9000CE1BD2 /* Brand.swift */; };
+		881A3CA82E6FE49D00CE1BD2 /* SharedSetupFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 881A3CA72E6FE49D00CE1BD2 /* SharedSetupFlow.swift */; };
 		88702FB92E6EB3A3003D5061 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 88702FB82E6EB3A3003D5061 /* FirebaseAuth */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		881A3C9F2E6FCC9000CE1BD2 /* Brand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Brand.swift; sourceTree = "<group>"; };
+		881A3CA72E6FE49D00CE1BD2 /* SharedSetupFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedSetupFlow.swift; sourceTree = "<group>"; };
 		88702FA72E6EB154003D5061 /* whistl.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = whistl.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -44,6 +46,7 @@
 				88702FA92E6EB154003D5061 /* whistl */,
 				88702FA82E6EB154003D5061 /* Products */,
 				881A3C9F2E6FCC9000CE1BD2 /* Brand.swift */,
+				881A3CA72E6FE49D00CE1BD2 /* SharedSetupFlow.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -135,6 +138,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				881A3CA02E6FCC9000CE1BD2 /* Brand.swift in Sources */,
+				881A3CA82E6FE49D00CE1BD2 /* SharedSetupFlow.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

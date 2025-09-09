@@ -17,8 +17,17 @@ enum AuthState {
 enum PairingLoadState {
     case unknown       // before any attempt
     case loading       // fetching user profile
-    case unpaired      // confirmed no pair
-    case paired        // confirmed has pairId
+    case unpaired      // confirmed no pair OR not finalized
+    case paired        // confirmed pair is finalized
+}
+
+// Setup workflow phases enforced by Firestore Rules/transactions
+enum SetupPhase: String {
+    case awaitingASubmission = "awaitingASubmission"
+    case awaitingBApproval   = "awaitingBApproval"
+    case awaitingBSubmission = "awaitingBSubmission"
+    case awaitingAApproval   = "awaitingAApproval"
+    case complete            = "complete"
 }
 
 @Observable
@@ -38,6 +47,10 @@ class AppController {
 
     var isPaired: Bool { pairingLoadState == .paired }
 
+    // Cached role resolution
+    var isMemberA: Bool = false
+    var isMemberB: Bool = false
+
     private var db: Firestore { Firestore.firestore() }
 
     @MainActor
@@ -51,6 +64,8 @@ class AppController {
                 self.pairId = nil
                 self.inviteCode = nil
                 self.pairingLoadState = .unknown
+                self.isMemberA = false
+                self.isMemberB = false
                 return
             }
 
@@ -58,14 +73,14 @@ class AppController {
             self.pairId = nil
             self.inviteCode = nil
             self.pairingLoadState = .loading
+            self.isMemberA = false
+            self.isMemberB = false
 
             Task {
                 let ok = await self.loadUserProfile(uid: user.uid)
                 if ok {
                     self.observePairMembership(uid: user.uid)
                 } else {
-                    // If we cannot read user profile (e.g., transient), default to unpaired
-                    // so UI routes to pairing gate rather than profile.
                     await MainActor.run {
                         self.pairingLoadState = .unpaired
                     }
@@ -109,6 +124,8 @@ class AppController {
             self.pairId = nil
             self.inviteCode = nil
             self.pairingLoadState = .unknown
+            self.isMemberA = false
+            self.isMemberB = false
         }
     }
 
@@ -133,6 +150,21 @@ class AppController {
         }
     }
 
+    /// Returns true if the pair is finalized: memberB is a non-empty string OR finalizedAt is set (not null).
+    private func isPairFinalized(pairId: String) async -> Bool {
+        do {
+            let snap = try await db.collection("pairs").document(pairId).getDocument()
+            guard let data = snap.data() else { return false }
+            let memberB = data["memberB"] as? String
+            let finalizedAt = data["finalizedAt"]
+            let hasMemberB = (memberB != nil && !(memberB ?? "").isEmpty)
+            let hasFinalizedAt = finalizedAt != nil && !(finalizedAt is NSNull)
+            return hasMemberB || hasFinalizedAt
+        } catch {
+            return false
+        }
+    }
+
     @MainActor
     private func loadUserProfile(uid: String) async -> Bool {
         do {
@@ -142,16 +174,22 @@ class AppController {
             }
             if let pid = snapshot.data()?["pairId"] as? String, !pid.isEmpty {
                 self.pairId = pid
-                self.pairingLoadState = .paired
+                let finalized = await self.isPairFinalized(pairId: pid)
+                self.pairingLoadState = finalized ? .paired : .unpaired
+                // Resolve role if possible
+                await self.resolveRoleForCurrentUser(pairId: pid, uid: uid)
             } else {
                 self.pairId = nil
                 self.pairingLoadState = .unpaired
+                self.isMemberA = false
+                self.isMemberB = false
             }
             return true
         } catch {
-            // Default to unpaired to avoid accidental routing to profile
             self.pairId = nil
             self.pairingLoadState = .unpaired
+            self.isMemberA = false
+            self.isMemberB = false
             return false
         }
     }
@@ -168,10 +206,18 @@ class AppController {
             Task { @MainActor in
                 if let pid, !pid.isEmpty {
                     self.pairId = pid
-                    self.pairingLoadState = .paired
+                    let finalized = await self.isPairFinalized(pairId: pid)
+                    self.pairingLoadState = finalized ? .paired : .unpaired
+                    await self.resolveRoleForCurrentUser(pairId: pid, uid: uid)
+                    // Ensure setup doc exists when finalized
+                    if finalized {
+                        await self.ensureInitialSetupPhase(pairId: pid)
+                    }
                 } else {
                     self.pairId = nil
                     self.pairingLoadState = .unpaired
+                    self.isMemberA = false
+                    self.isMemberB = false
                 }
             }
         }
@@ -192,6 +238,7 @@ class AppController {
                     errorPtr?.pointee = PairingError.alreadyPaired as NSError
                     return nil
                 }
+                // Create pair doc (not finalized yet; memberB null)
                 txn.setData([
                     "createdAt": FieldValue.serverTimestamp(),
                     "inviteCode": code,
@@ -199,21 +246,30 @@ class AppController {
                     "memberB": NSNull(),
                     "finalizedAt": NSNull()
                 ], forDocument: pairRef)
+
+                // Create shared space doc
                 txn.setData([
                     "createdAt": FieldValue.serverTimestamp(),
                     "pairId": pairRef.documentID
                 ], forDocument: spaceRef)
+
+                // Update user with pairId
                 txn.setData(["pairId": pairRef.documentID], forDocument: self.userDoc(uid: uid), merge: true)
+
                 return nil
             } catch {
                 errorPtr?.pointee = error as NSError
                 return nil
             }
         }
+        // After creation, not finalized yet; keep state as unpaired
         Task { @MainActor in
             self.pairId = pairRef.documentID
             self.inviteCode = code
-            self.pairingLoadState = .paired
+            self.pairingLoadState = .unpaired
+            // Creator is memberA by definition
+            self.isMemberA = true
+            self.isMemberB = false
         }
     }
 
@@ -223,33 +279,55 @@ class AppController {
         let trimmed = code.uppercased().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw PairingError.invalidCode }
 
+        // Query pair by inviteCode
         let query = try await pairsCollection.whereField("inviteCode", isEqualTo: trimmed).limit(to: 1).getDocuments()
         guard let doc = query.documents.first else { throw PairingError.codeNotFound }
         let pairRef = doc.reference
+        let spaceRef = pairSpacesCollection.document(pairRef.documentID)
+        let setupRef = spaceRef.collection("setup").document("current")
 
         try await db.runTransaction { txn, errorPtr in
             do {
+                // Ensure user is not already paired
                 let userSnap = try txn.getDocument(self.userDoc(uid: uid))
                 if let existing = userSnap.data()?["pairId"] as? String, !existing.isEmpty {
                     errorPtr?.pointee = PairingError.alreadyPaired as NSError
                     return nil
                 }
+
+                // Load pair doc
                 let pairSnap = try txn.getDocument(pairRef)
                 guard var data = pairSnap.data() else {
                     errorPtr?.pointee = PairingError.codeNotFound as NSError
                     return nil
                 }
+                // Ensure there's a free slot
                 if let memberB = data["memberB"] as? String, !memberB.isEmpty {
                     errorPtr?.pointee = PairingError.pairFull as NSError
                     return nil
                 }
+                // Set memberB and finalize
                 data["memberB"] = uid
                 data["finalizedAt"] = FieldValue.serverTimestamp()
-                data["inviteCode"] = NSNull()
+                data["inviteCode"] = NSNull() // remove code so it can't be reused
                 txn.setData(data, forDocument: pairRef, merge: true)
 
+                // Update user with pairId
                 let pairId = pairRef.documentID
                 txn.setData(["pairId": pairId], forDocument: self.userDoc(uid: uid), merge: true)
+
+                // Initialize setup/current with server-controlled phase
+                // Phase starts with A must submit first
+                txn.setData([
+                    "step": "blockSchedule",
+                    "stepIndex": 0,
+                    "answers": [:],
+                    "approvals": [:],
+                    "submitted": [:],
+                    "phase": SetupPhase.awaitingASubmission.rawValue,
+                    "updatedAt": FieldValue.serverTimestamp()
+                ], forDocument: setupRef, merge: true)
+
                 return nil
             } catch {
                 errorPtr?.pointee = error as NSError
@@ -257,10 +335,13 @@ class AppController {
             }
         }
 
+        // After join, the pair is finalized; mark paired
         Task { @MainActor in
             self.pairId = pairRef.documentID
             self.inviteCode = nil
             self.pairingLoadState = .paired
+            self.isMemberA = false
+            self.isMemberB = true
         }
     }
 
@@ -275,6 +356,55 @@ class AppController {
             }
         } catch {
             // ignore
+        }
+    }
+
+    // Ensure the setup doc exists with a valid phase when pair is finalized (idempotent)
+    func ensureInitialSetupPhase(pairId: String) async {
+        let setupRef = pairSpacesCollection.document(pairId).collection("setup").document("current")
+        do {
+            let snap = try await setupRef.getDocument()
+            if let data = snap.data() {
+                // If phase missing, set it to awaitingASubmission
+                if data["phase"] == nil {
+                    try await setupRef.setData([
+                        "phase": SetupPhase.awaitingASubmission.rawValue,
+                        "updatedAt": FieldValue.serverTimestamp()
+                    ], merge: true)
+                }
+            } else {
+                // Create minimal doc
+                try await setupRef.setData([
+                    "step": "blockSchedule",
+                    "stepIndex": 0,
+                    "answers": [:],
+                    "approvals": [:],
+                    "submitted": [:],
+                    "phase": SetupPhase.awaitingASubmission.rawValue,
+                    "updatedAt": FieldValue.serverTimestamp()
+                ])
+            }
+        } catch {
+            // Best-effort; Security Rules should still protect transitions.
+        }
+    }
+
+    // Resolve current user's role (A or B) by reading pairs/{pairId}
+    func resolveRoleForCurrentUser(pairId: String, uid: String) async {
+        do {
+            let snap = try await pairsCollection.document(pairId).getDocument()
+            guard let data = snap.data() else { return }
+            let memberA = data["memberA"] as? String
+            let memberB = data["memberB"] as? String
+            await MainActor.run {
+                self.isMemberA = (memberA == uid)
+                self.isMemberB = (memberB == uid)
+            }
+        } catch {
+            await MainActor.run {
+                self.isMemberA = false
+                self.isMemberB = false
+            }
         }
     }
 
@@ -301,3 +431,4 @@ class AppController {
         }
     }
 }
+

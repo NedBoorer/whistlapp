@@ -19,22 +19,25 @@ struct ContentView: View {
             Group {
                 switch appController.authState {
                 case .undefined:
+                    // While Firebase restores session or we don't know yet, show a spinner.
                     ProgressView()
                         .tint(brand.accent)
 
                 case .notAuthenticated:
+                    // Entry: Welcome -> Authview (user chooses Sign in or Create account)
                     NavigationStack {
-                        Authview()
+                        WelcomeView()
                             .toolbar { }
                     }
                     .tint(brand.accent)
 
                 case .authenticated:
-                    // Route based on pairing status:
-                    // If not paired, go to pairing flow; if paired, show welcome/confirmation.
+                    // After sign-in:
+                    // - If not paired: go to pairing flow.
+                    // - If paired: go to shared rules setup.
                     NavigationStack {
                         if appController.isPaired {
-                            PairedWelcomeView()
+                            SharedSetupFlowView()
                                 .navigationBarTitleDisplayMode(.inline)
                         } else {
                             PairingGateView()
