@@ -17,6 +17,7 @@ struct Authview: View {
     @State private var isLoading = false
 
     // Error presentation
+    @State private var nameError: String?
     @State private var emailError: String?
     @State private var passwordError: String?
     @State private var globalError: String?
@@ -32,7 +33,7 @@ struct Authview: View {
 
     @FocusState private var focusedField: Field?
 
-    enum Field { case email, password }
+    enum Field { case name, email, password }
 
     enum ResetState {
         case idle
@@ -57,10 +58,12 @@ struct Authview: View {
                     isSignUp: $isSignUp,
                     isSecure: $isSecure,
                     isLoading: $isLoading,
+                    nameError: $nameError,
                     emailError: $emailError,
                     passwordError: $passwordError,
                     globalError: $globalError,
                     brand: brand,
+                    name: Bindable(appController).name,
                     email: Bindable(appController).email,
                     password: Bindable(appController).password,
                     onPrimary: authenticate,
@@ -70,6 +73,7 @@ struct Authview: View {
                         resetEmail = appController.email
                         clearErrors()
                     },
+                    validateName: validateName,
                     validateEmail: validateEmail,
                     validatePassword: validatePassword
                 )
@@ -109,7 +113,10 @@ struct Authview: View {
         }
         .onAppear {
             // Initial focus for better flow
-            focusedField = appController.email.isEmpty ? .email : .password
+            focusedField = appController.email.isEmpty ? (isSignUp ? .name : .email) : .password
+        }
+        .onChange(of: appController.name) { _ in
+            if nameError != nil { validateName() }
         }
         .onChange(of: appController.email) { _ in
             if emailError != nil { validateEmail() }
@@ -122,7 +129,20 @@ struct Authview: View {
     // MARK: - Validation
 
     private var isFormValid: Bool {
-        validateEmail(silent: true) && validatePassword(silent: true)
+        let nameOK = isSignUp ? validateName(silent: true) : true
+        return nameOK && validateEmail(silent: true) && validatePassword(silent: true)
+    }
+
+    @discardableResult
+    private func validateName(silent: Bool = false) -> Bool {
+        let name = appController.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isValid = !name.isEmpty
+        if !silent {
+            nameError = isValid ? nil : "Enter your name."
+        } else if nameError != nil {
+            nameError = isValid ? nil : nameError
+        }
+        return isValid
     }
 
     @discardableResult
@@ -157,6 +177,7 @@ struct Authview: View {
 
     private func clearErrors() {
         withAnimation {
+            nameError = nil
             emailError = nil
             passwordError = nil
             globalError = nil
@@ -168,7 +189,8 @@ struct Authview: View {
     private func authenticate() {
         clearErrors()
         guard isFormValid, !isLoading else {
-            if !validateEmail(silent: false) { focusedField = .email }
+            if isSignUp, !validateName(silent: false) { focusedField = .name }
+            else if !validateEmail(silent: false) { focusedField = .email }
             else if !validatePassword(silent: false) { focusedField = .password }
             return
         }
@@ -177,6 +199,8 @@ struct Authview: View {
             do {
                 if isSignUp {
                     try await appController.signUp()
+                    // Set display name after creating account
+                    try await appController.updateDisplayName(appController.name)
                     showSuccessToast("Account created. Welcome to whistl!")
                 } else {
                     try await appController.signIn()
@@ -313,6 +337,7 @@ private struct CardView: View {
     @Binding var isSecure: Bool
     @Binding var isLoading: Bool
 
+    @Binding var nameError: String?
     @Binding var emailError: String?
     @Binding var passwordError: String?
     @Binding var globalError: String?
@@ -321,6 +346,7 @@ private struct CardView: View {
 
     let brand: Brand
 
+    @Binding var name: String
     @Binding var email: String
     @Binding var password: String
 
@@ -328,6 +354,7 @@ private struct CardView: View {
     var onToggleMode: () -> Void
     var onForgot: () -> Void
 
+    var validateName: (_ silent: Bool) -> Bool
     var validateEmail: (_ silent: Bool) -> Bool
     var validatePassword: (_ silent: Bool) -> Bool
 
@@ -335,6 +362,23 @@ private struct CardView: View {
         VStack(spacing: 14) {
             if let globalError {
                 GlobalErrorBanner(message: globalError, brand: brand)
+            }
+
+            if isSignUp {
+                NameField(
+                    text: $name,
+                    isError: nameError != nil,
+                    brand: brand
+                )
+                .focused($focusedField, equals: .name)
+                .onSubmit {
+                    _ = validateName(false)
+                    focusedField = .email
+                }
+
+                if let nameError {
+                    FieldErrorText(message: nameError, brand: brand)
+                }
             }
 
             EmailField(
@@ -417,7 +461,8 @@ private struct CardView: View {
     }
 
     private var isFormValid: Bool {
-        validateEmail(true) && validatePassword(true)
+        let nameOK = isSignUp ? validateName(true) : true
+        return nameOK && validateEmail(true) && validatePassword(true)
     }
 }
 
@@ -443,6 +488,24 @@ private struct GlobalErrorBanner: View {
                 .stroke(brand.accent.opacity(0.25), lineWidth: 1)
         )
         .transition(.opacity.combined(with: .move(edge: .top)))
+    }
+}
+
+private struct NameField: View {
+    @Binding var text: String
+    var isError: Bool
+    let brand: Brand
+
+    var body: some View {
+        IconTextField(
+            title: "Name",
+            systemImage: "person",
+            text: $text,
+            brand: brand,
+            isError: isError
+        )
+        .textContentType(.name)
+        .submitLabel(.next)
     }
 }
 

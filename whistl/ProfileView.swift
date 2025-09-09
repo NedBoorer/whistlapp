@@ -11,10 +11,14 @@ struct ProfileView: View {
     @Environment(AppController.self) private var appController
 
     var body: some View {
-        VStack {
+        VStack(spacing: 12) {
+            Text("Hi\(greetingName)")
+                .font(.largeTitle.bold())
+                .frame(maxWidth: .infinity, alignment: .leading)
+
             Text("Welcome! You are logged in.")
                 .font(.headline)
-                .padding()
+                .padding(.bottom, 12)
 
             Button("Logout") {
                 do {
@@ -26,6 +30,12 @@ struct ProfileView: View {
             .buttonStyle(.bordered)
             .padding()
         }
+        .padding()
+    }
+
+    private var greetingName: String {
+        let name = appController.currentDisplayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? "" : " \(name)"
     }
 }
 
