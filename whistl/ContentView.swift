@@ -30,30 +30,19 @@ struct ContentView: View {
                     .tint(brand.accent)
 
                 case .authenticated:
-                    // Only show Profile when pairing is confirmed.
-                    if appController.pairingLoadState == .paired {
-                        NavigationStack {
-                            ProfileView()
-                                .navigationTitle("whistl")
+                    // Route based on pairing status:
+                    // If not paired, go to pairing flow; if paired, show welcome/confirmation.
+                    NavigationStack {
+                        if appController.isPaired {
+                            PairedWelcomeView()
                                 .navigationBarTitleDisplayMode(.inline)
-                                .toolbar {
-                                    ToolbarItem(placement: .principal) {
-                                        Text("whistl")
-                                            .font(.system(size: 20, weight: .bold, design: .rounded))
-                                            .foregroundStyle(brand.accent)
-                                    }
-                                }
-                        }
-                        .tint(brand.accent)
-                    } else {
-                        // While loading or unpaired, guide to pairing.
-                        NavigationStack {
+                        } else {
                             PairingGateView()
                                 .navigationTitle("Link with a partner")
                                 .navigationBarTitleDisplayMode(.inline)
                         }
-                        .tint(brand.accent)
                     }
+                    .tint(brand.accent)
                 }
             }
         }

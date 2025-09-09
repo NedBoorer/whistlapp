@@ -37,7 +37,7 @@ struct WelcomeView: View {
                     .padding(.horizontal, 24)
 
                 NavigationLink {
-                    SignUpView()
+                    Authview()
                 } label: {
                     Text("Get started")
                         .fontWeight(.semibold)

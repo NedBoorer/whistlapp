@@ -20,7 +20,23 @@ struct PairingGateView: View {
                 .foregroundStyle(brand.secondaryText)
                 .multilineTextAlignment(.center)
 
-            // Defensive UI gating (root view already gates, this is extra safety)
+            // Logout button
+            HStack {
+                Spacer()
+                Button {
+                    do {
+                        try appController.signOut()
+                    } catch {
+                        // Optionally surface an error message
+                    }
+                } label: {
+                    Label("Log out", systemImage: "rectangle.portrait.and.arrow.right")
+                        .font(.footnote.weight(.semibold))
+                }
+                .buttonStyle(.plain)
+                .tint(.red)
+            }
+
             if appController.authState != .authenticated {
                 HStack(spacing: 8) {
                     Image(systemName: "person.crop.circle.badge.exclamationmark")
@@ -122,7 +138,6 @@ struct CreatePairView: View {
         .navigationTitle("Create link")
         .navigationBarTitleDisplayMode(.inline)
         .task {
-            // In case we navigated back, ensure we have the code
             await appController.fetchInviteCodeIfNeeded()
         }
     }
@@ -242,12 +257,94 @@ struct WaitingForPartnerView: View {
     private func monitorPair() async {
         guard let pid = appController.pairId else { return }
         let pairRef = Firestore.firestore().collection("pairs").document(pid)
-        // Use a listener to flip state when memberB is set
         pairRef.addSnapshotListener { snapshot, _ in
             guard let data = snapshot?.data() else { return }
             let memberB = data["memberB"] as? String
             let finalizedAt = data["finalizedAt"]
             partnerJoined = (memberB != nil && !(memberB ?? "").isEmpty) || !(finalizedAt is NSNull)
+        }
+    }
+}
+
+// New view: Welcome users who are paired and invite to continue setup together.
+struct PairedWelcomeView: View {
+    @Environment(AppController.self) private var appController
+    @State private var partnerName: String = ""
+    private let brand = BrandPalette()
+
+    var body: some View {
+        VStack(spacing: 16) {
+            if partnerName.isEmpty {
+                ProgressView()
+                    .tint(brand.accent)
+            } else {
+                Text("Welcome \(currentUserName)")
+                    .font(.title2.weight(.semibold))
+
+                Text("You and \(partnerName) are paired.")
+                    .font(.headline)
+
+                Text("Are you both ready to set up the rest of your account?")
+                    .font(.callout)
+                    .foregroundStyle(brand.secondaryText)
+                    .multilineTextAlignment(.center)
+
+                // Continue button — route to whatever setup you want next.
+                // For now, send them to CreatePairView/JoinPairView parent gate (can be replaced with your setup flow).
+                NavigationLink {
+                    PairingGateView()
+                        .navigationTitle("Continue setup")
+                        .navigationBarTitleDisplayMode(.inline)
+                } label: {
+                    Text("Continue")
+                        .frame(maxWidth: .infinity)
+                        .fontWeight(.semibold)
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            Spacer()
+        }
+        .padding()
+        .navigationTitle("Welcome")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            await fetchPartnerName()
+        }
+    }
+
+    private var currentUserName: String {
+        let name = appController.currentDisplayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? "there" : name
+    }
+
+    private func fetchPartnerName() async {
+        guard let pid = appController.pairId,
+              let uid = Auth.auth().currentUser?.uid else { return }
+        let db = Firestore.firestore()
+        do {
+            let pairSnap = try await db.collection("pairs").document(pid).getDocument()
+            guard let data = pairSnap.data() else { return }
+            let memberA = data["memberA"] as? String
+            let memberB = data["memberB"] as? String
+
+            let partnerUid: String? = {
+                if let a = memberA, a != uid { return a }
+                if let b = memberB, b != uid { return b }
+                return nil
+            }()
+
+            if let partnerUid {
+                let partnerDoc = try await db.collection("users").document(partnerUid).getDocument()
+                if let name = partnerDoc.data()?["name"] as? String, !name.isEmpty {
+                    partnerName = name
+                } else {
+                    partnerName = "your partner"
+                }
+            } else {
+                partnerName = "your partner"
+            }
+        } catch {
+            partnerName = "your partner"
         }
     }
 }
