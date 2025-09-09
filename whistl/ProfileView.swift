@@ -9,26 +9,36 @@ import SwiftUI
 
 struct ProfileView: View {
     @Environment(AppController.self) private var appController
+    private let brand = BrandPalette()
 
     var body: some View {
-        VStack(spacing: 12) {
-            Text("Hi\(greetingName)")
-                .font(.largeTitle.bold())
-                .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(spacing: 16) {
+            HStack {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Hi\(greetingName)")
+                        .font(.largeTitle.bold())
 
-            Text("Welcome! You are logged in.")
-                .font(.headline)
-                .padding(.bottom, 12)
+                    Text("Welcome! You are logged in.")
+                        .font(.headline)
+                        .foregroundStyle(brand.secondaryText)
+                }
+                Spacer()
+            }
 
-            Button("Logout") {
+            Spacer()
+
+            Button {
                 do {
                     try appController.signOut()
                 } catch {
                     print("Logout error:", error.localizedDescription)
                 }
+            } label: {
+                Text("Logout")
+                    .frame(maxWidth: .infinity)
+                    .fontWeight(.semibold)
             }
             .buttonStyle(.bordered)
-            .padding()
         }
         .padding()
     }

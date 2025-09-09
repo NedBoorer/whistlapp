@@ -42,46 +42,49 @@ struct Authview: View {
         case failed(message: String)
     }
 
-    // Brand colors
-    private let brand = Brand()
+    // Centralized brand
+    private let brand = BrandPalette()
 
     var body: some View {
         ZStack {
-            BackgroundGradient(brand: brand)
+            brand.background()
 
-            VStack(spacing: 24) {
-                Spacer(minLength: 12)
+            ScrollView {
+                VStack(spacing: 24) {
+                    Spacer(minLength: 12)
 
-                HeaderView(isSignUp: isSignUp, brand: brand)
+                    // Big logo only on Auth screen; no toolbar title here to avoid duplication
+                    HeaderView(isSignUp: isSignUp, brand: brand)
 
-                CardView(
-                    isSignUp: $isSignUp,
-                    isSecure: $isSecure,
-                    isLoading: $isLoading,
-                    nameError: $nameError,
-                    emailError: $emailError,
-                    passwordError: $passwordError,
-                    globalError: $globalError,
-                    brand: brand,
-                    name: Bindable(appController).name,
-                    email: Bindable(appController).email,
-                    password: Bindable(appController).password,
-                    onPrimary: authenticate,
-                    onToggleMode: { isSignUp.toggle(); clearErrors() },
-                    onForgot: {
-                        showReset = true
-                        resetEmail = appController.email
-                        clearErrors()
-                    },
-                    validateName: validateName,
-                    validateEmail: validateEmail,
-                    validatePassword: validatePassword
-                )
-                .padding(.horizontal, 20)
+                    CardView(
+                        isSignUp: $isSignUp,
+                        isSecure: $isSecure,
+                        isLoading: $isLoading,
+                        nameError: $nameError,
+                        emailError: $emailError,
+                        passwordError: $passwordError,
+                        globalError: $globalError,
+                        brand: brand,
+                        name: Bindable(appController).name,
+                        email: Bindable(appController).email,
+                        password: Bindable(appController).password,
+                        onPrimary: authenticate,
+                        onToggleMode: { isSignUp.toggle(); clearErrors() },
+                        onForgot: {
+                            showReset = true
+                            resetEmail = appController.email
+                            clearErrors()
+                        },
+                        validateName: validateName,
+                        validateEmail: validateEmail,
+                        validatePassword: validatePassword
+                    )
+                    .padding(.horizontal, 20)
 
-                Spacer()
-
-                FooterView(brand: brand)
+                    FooterView(brand: brand)
+                        .padding(.top, 4)
+                }
+                .padding(.vertical, 24)
             }
 
             ToastContainer(
@@ -90,15 +93,8 @@ struct Authview: View {
                 brand: brand
             )
         }
-        .navigationTitle("whistl")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text("whistl")
-                    .font(.system(size: 20, weight: .bold, design: .rounded))
-                    .foregroundStyle(brand.accent)
-                    .accessibilityHidden(true)
-            }
+        .toolbar { // no principal title here to avoid duplicate with big logo
         }
         .tint(brand.accent)
         .sheet(isPresented: $showReset) {
@@ -170,7 +166,6 @@ struct Authview: View {
     }
 
     private func isValidEmail(_ email: String) -> Bool {
-        // Simple RFC-like pattern sufficient for UI validation
         let pattern = #"^\S+@\S+\.\S+$"#
         return email.range(of: pattern, options: .regularExpression) != nil
     }
@@ -199,7 +194,6 @@ struct Authview: View {
             do {
                 if isSignUp {
                     try await appController.signUp()
-                    // Set display name after creating account
                     try await appController.updateDisplayName(appController.name)
                     showSuccessToast("Account created. Welcome to whistl!")
                 } else {
@@ -247,7 +241,6 @@ struct Authview: View {
                 globalError = message
             }
         } else {
-            // Not a FirebaseAuth error; show generic message
             globalError = nsError.localizedDescription
         }
     }
@@ -293,26 +286,9 @@ struct Authview: View {
 
 // MARK: - Background
 
-private struct BackgroundGradient: View {
-    let brand: Brand
-    var body: some View {
-        LinearGradient(
-            colors: [
-                brand.backgroundTop,
-                brand.backgroundBottom
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-        .ignoresSafeArea()
-    }
-}
-
-// MARK: - Header
-
 private struct HeaderView: View {
     let isSignUp: Bool
-    let brand: Brand
+    let brand: BrandPalette
 
     var body: some View {
         VStack(spacing: 8) {
@@ -322,11 +298,11 @@ private struct HeaderView: View {
                 .foregroundStyle(brand.primaryText)
                 .accessibilityAddTraits(.isHeader)
 
-            Text("Sign in securely to continue")
+            Text(isSignUp ? "Sign up securely to continue" : "Sign in securely to continue")
                 .font(.callout)
                 .foregroundStyle(brand.secondaryText)
         }
-        .padding(.top, 24)
+        .padding(.top, 16)
     }
 }
 
@@ -344,7 +320,7 @@ private struct CardView: View {
 
     @FocusState<Authview.Field?> var focusedField: Authview.Field?
 
-    let brand: Brand
+    let brand: BrandPalette
 
     @Binding var name: String
     @Binding var email: String
@@ -451,13 +427,14 @@ private struct CardView: View {
         }
         .padding(20)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(.thinMaterial)
+            RoundedRectangle(cornerRadius: brand.cornerRadius, style: .continuous)
+                .fill(.ultraThinMaterial) // better contrast across modes
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: brand.cornerRadius, style: .continuous)
                 .strokeBorder(brand.cardStroke, lineWidth: 1)
         )
+        .shadow(color: Color.black.opacity(0.06), radius: 12, x: 0, y: 8)
     }
 
     private var isFormValid: Bool {
@@ -468,11 +445,11 @@ private struct CardView: View {
 
 private struct GlobalErrorBanner: View {
     let message: String
-    let brand: Brand
+    let brand: BrandPalette
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Image(systemName: "exclamationmark.circle.fill")
-                .foregroundStyle(brand.accent)
+                .foregroundStyle(brand.error)
             Text(message)
                 .font(.footnote)
                 .foregroundStyle(brand.primaryText)
@@ -481,11 +458,11 @@ private struct GlobalErrorBanner: View {
         .padding(10)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(brand.accent.opacity(0.12))
+                .fill(brand.error.opacity(0.08))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(brand.accent.opacity(0.25), lineWidth: 1)
+                .stroke(brand.error.opacity(0.25), lineWidth: 1)
         )
         .transition(.opacity.combined(with: .move(edge: .top)))
     }
@@ -494,7 +471,7 @@ private struct GlobalErrorBanner: View {
 private struct NameField: View {
     @Binding var text: String
     var isError: Bool
-    let brand: Brand
+    let brand: BrandPalette
 
     var body: some View {
         IconTextField(
@@ -512,7 +489,7 @@ private struct NameField: View {
 private struct EmailField: View {
     @Binding var text: String
     var isError: Bool
-    let brand: Brand
+    let brand: BrandPalette
 
     var body: some View {
         IconTextField(
@@ -535,7 +512,7 @@ private struct PasswordField: View {
     @Binding var isSecure: Bool
     var isError: Bool
     var isSignUp: Bool
-    let brand: Brand
+    let brand: BrandPalette
 
     var body: some View {
         IconSecureField(
@@ -554,7 +531,7 @@ private struct PasswordField: View {
 // MARK: - Footer
 
 private struct FooterView: View {
-    let brand: Brand
+    let brand: BrandPalette
     var body: some View {
         Text("By continuing you agree to our Terms & Privacy Policy.")
             .font(.caption)
@@ -570,7 +547,7 @@ private struct FooterView: View {
 private struct ToastContainer: View {
     @Binding var showToast: Bool
     let toastMessage: String?
-    let brand: Brand
+    let brand: BrandPalette
 
     var body: some View {
         Group {
@@ -592,33 +569,12 @@ private struct ToastContainer: View {
     }
 }
 
-// MARK: - Brand
-
-private struct Brand {
-    // Light blue accent and clean white/blue surfaces
-    let accent = Color(red: 0.12, green: 0.49, blue: 0.98) // iOS-like blue but softer
-    let backgroundTop = Color(red: 0.93, green: 0.97, blue: 1.0) // very light blue
-    let backgroundBottom = Color.white
-    let primaryText = Color.primary
-    let secondaryText = Color.secondary
-    let cardStroke = Color.black.opacity(0.06)
-    let fieldBackground = Color(.secondarySystemBackground)
-    let error = Color.red
-}
-
 // MARK: - Logo
 
 private struct LogoView: View {
-    let brand: Brand
+    let brand: BrandPalette
     var body: some View {
-        let gradient = LinearGradient(
-            colors: [
-                brand.accent,
-                brand.accent.opacity(0.85)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
+        let gradient = brand.primaryGradient()
 
         Text("whistl")
             .font(.system(size: 44, weight: .heavy, design: .rounded))
@@ -636,7 +592,7 @@ private struct IconTextField: View {
     let title: String
     let systemImage: String
     @Binding var text: String
-    let brand: Brand
+    let brand: BrandPalette
     var isError: Bool = false
 
     var body: some View {
@@ -648,15 +604,16 @@ private struct IconTextField: View {
             TextField(title, text: $text)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
+                .foregroundStyle(brand.primaryText)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: brand.fieldCornerRadius, style: .continuous)
                 .fill(brand.fieldBackground)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: brand.fieldCornerRadius, style: .continuous)
                 .stroke(isError ? brand.error : brand.cardStroke, lineWidth: isError ? 1.5 : 1)
         )
     }
@@ -667,7 +624,7 @@ private struct IconSecureField: View {
     let systemImage: String
     @Binding var text: String
     @Binding var isSecure: Bool
-    let brand: Brand
+    let brand: BrandPalette
     var isError: Bool = false
 
     var body: some View {
@@ -679,8 +636,10 @@ private struct IconSecureField: View {
             Group {
                 if isSecure {
                     SecureField(title, text: $text)
+                        .foregroundStyle(brand.primaryText)
                 } else {
                     TextField(title, text: $text)
+                        .foregroundStyle(brand.primaryText)
                 }
             }
 
@@ -695,37 +654,28 @@ private struct IconSecureField: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: brand.fieldCornerRadius, style: .continuous)
                 .fill(brand.fieldBackground)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: brand.fieldCornerRadius, style: .continuous)
                 .stroke(isError ? brand.error : brand.cardStroke, lineWidth: isError ? 1.5 : 1)
         )
     }
 }
 
 private struct PrimaryButtonStyle: ButtonStyle {
-    let brand: Brand
+    let brand: BrandPalette
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .padding(.vertical, 14)
             .padding(.horizontal, 16)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                brand.accent,
-                                brand.accent.opacity(0.9)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                RoundedRectangle(cornerRadius: brand.fieldCornerRadius, style: .continuous)
+                    .fill(brand.primaryGradient())
             )
             .foregroundStyle(.white)
-            .opacity(configuration.isPressed ? 0.9 : 1.0)
+            .opacity(configuration.isPressed ? 0.95 : 1.0)
             .scaleEffect(configuration.isPressed ? 0.995 : 1.0)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
@@ -733,7 +683,7 @@ private struct PrimaryButtonStyle: ButtonStyle {
 
 private struct FieldErrorText: View {
     let message: String
-    let brand: Brand
+    let brand: BrandPalette
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "exclamationmark.triangle.fill")
@@ -753,7 +703,7 @@ private struct FieldErrorText: View {
 
 private struct ToastView: View {
     let message: String
-    let brand: Brand
+    let brand: BrandPalette
 
     var body: some View {
         HStack(spacing: 10) {
@@ -780,7 +730,7 @@ private struct ToastView: View {
 private struct ResetPasswordSheet: View {
     @Binding var email: String
     @Binding var state: Authview.ResetState
-    let brand: Brand
+    let brand: BrandPalette
     var onSend: () -> Void
 
     var body: some View {

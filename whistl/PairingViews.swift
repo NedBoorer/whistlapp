@@ -7,6 +7,7 @@
 
 import SwiftUI
 import FirebaseAuth
+import FirebaseFirestore
 
 struct PairingGateView: View {
     @Environment(AppController.self) private var appController
@@ -19,6 +20,15 @@ struct PairingGateView: View {
                 .foregroundStyle(brand.secondaryText)
                 .multilineTextAlignment(.center)
 
+            // Defensive UI gating (root view already gates, this is extra safety)
+            if appController.authState != .authenticated {
+                HStack(spacing: 8) {
+                    Image(systemName: "person.crop.circle.badge.exclamationmark")
+                    Text("Please sign in to continue.")
+                }
+                .foregroundStyle(brand.secondaryText)
+            }
+
             NavigationLink {
                 CreatePairView()
             } label: {
@@ -27,6 +37,7 @@ struct PairingGateView: View {
                     .fontWeight(.semibold)
             }
             .buttonStyle(.borderedProminent)
+            .disabled(appController.authState != .authenticated)
 
             NavigationLink {
                 JoinPairView()
@@ -36,6 +47,7 @@ struct PairingGateView: View {
                     .fontWeight(.semibold)
             }
             .buttonStyle(.bordered)
+            .disabled(appController.authState != .authenticated)
 
             Spacer()
         }
@@ -52,7 +64,11 @@ struct CreatePairView: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            if let code = appController.inviteCode {
+            if appController.authState != .authenticated {
+                Label("Please sign in before creating a link.", systemImage: "person.crop.circle.badge.exclamationmark")
+                    .foregroundStyle(.red)
+                    .font(.footnote)
+            } else if let code = appController.inviteCode {
                 Text("Share this code with your partner")
                     .font(.headline)
                 Text(code)
@@ -97,7 +113,7 @@ struct CreatePairView: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(isCreating)
+                .disabled(isCreating || appController.authState != .authenticated)
             }
 
             Spacer()
@@ -112,6 +128,10 @@ struct CreatePairView: View {
     }
 
     private func create() async {
+        guard appController.authState == .authenticated else {
+            errorMessage = AppController.PairingError.notAuthenticated.localizedDescription
+            return
+        }
         errorMessage = nil
         isCreating = true
         do {
@@ -167,7 +187,7 @@ struct JoinPairView: View {
                 }
             }
             .buttonStyle(.borderedProminent)
-            .disabled(code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isJoining)
+            .disabled(code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isJoining || appController.authState != .authenticated)
 
             Spacer()
         }
@@ -177,6 +197,10 @@ struct JoinPairView: View {
     }
 
     private func join() async {
+        guard appController.authState == .authenticated else {
+            errorMessage = AppController.PairingError.notAuthenticated.localizedDescription
+            return
+        }
         errorMessage = nil
         isJoining = true
         do {
@@ -231,4 +255,3 @@ struct WaitingForPartnerView: View {
 #Preview {
     NavigationStack { PairingGateView() }.environment(AppController())
 }
-

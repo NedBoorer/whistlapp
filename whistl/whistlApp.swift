@@ -10,27 +10,24 @@ import FirebaseCore
 
 @main
 struct whistlApp: App {
-    // Ensure AppDelegate runs first and configures Firebase
-    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-
+    // Create a single shared AppController
     @State private var appController: AppController
 
+    // Inject AppDelegate and pass the same controller into it so it can start listening after Firebase config
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+
     init() {
-        // AppDelegate will call FirebaseApp.configure() in didFinishLaunching
-        // Create AppController AFTER Firebase is configured at launch time.
-        // SwiftUI creates the App type before application(_:didFinishLaunchingWithOptions:),
-        // but this stored property is initialized here in init(), not at declaration,
-        // so we defer its creation until after App is constructed.
-        self._appController = State(initialValue: AppController())
+        let controller = AppController()
+        self._appController = State(initialValue: controller)
+        // Pass reference into AppDelegate before application(_:didFinishLaunching...) runs
+        AppDelegate.sharedAppController = controller
     }
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environment(appController) // inject controller once
-                .onAppear {
-                    appController.listenToAuthChanges()
-                }
+                // No need to call listenToAuthChanges here anymore
         }
     }
 }

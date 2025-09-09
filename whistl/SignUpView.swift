@@ -20,6 +20,9 @@ struct SignUpView: View {
     @State private var passwordError: String?
     @State private var globalError: String?
 
+    // Navigation
+    @State private var navigateToPairing = false
+
     @FocusState private var focusedField: Field?
     private let brand = BrandPalette()
 
@@ -123,8 +126,17 @@ struct SignUpView: View {
                                     .frame(maxWidth: .infinity)
                             }
                         }
-                        .buttonStyle(primaryButtonStyle())
                         .disabled(!isFormValid || isLoading)
+
+                        // Hidden navigation trigger to pairing
+                        NavigationLink(isActive: $navigateToPairing) {
+                            PairingGateView()
+                                .navigationTitle("Link with a partner")
+                                .navigationBarTitleDisplayMode(.inline)
+                        } label: {
+                            EmptyView()
+                        }
+                        .hidden()
                     }
                     .padding(20)
                     .background(
@@ -197,12 +209,24 @@ struct SignUpView: View {
         }
 
         isLoading = true
+        let email = appController.email
+        let password = appController.password
+        let name = appController.name
+
         Task {
             do {
+                // 1) Create account
                 try await appController.signUp()
-                try await appController.updateDisplayName(appController.name)
-                // After sign-up, AppController updates authState to authenticated via listener.
-                // ContentView will route to PairingGateView if not paired.
+
+                // 2) Set display name
+                try await appController.updateDisplayName(name)
+
+                // 3) Force a fresh sign-in step as requested
+                try? appController.signOut()
+                try await appController.signIn()
+
+                // 4) Continue to pairing
+                navigateToPairing = true
             } catch {
                 handleAuthError(error)
             }
@@ -220,6 +244,8 @@ struct SignUpView: View {
                 emailError = "Enter a valid email address."
             case .weakPassword:
                 passwordError = "Password must be at least 6 characters."
+            case .networkError:
+                globalError = "Network error. Check your connection and try again."
             default:
                 globalError = nsError.localizedDescription
             }
@@ -314,10 +340,6 @@ struct SignUpView: View {
             RoundedRectangle(cornerRadius: brand.fieldCornerRadius, style: .continuous)
                 .stroke(isError ? brand.error : brand.cardStroke, lineWidth: isError ? 1.5 : 1)
         )
-    }
-
-    private func primaryButtonStyle() -> some ButtonStyle {
-        BorderedProminentButtonStyle()
     }
 }
 
