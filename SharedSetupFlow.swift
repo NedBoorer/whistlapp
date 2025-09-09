@@ -110,70 +110,96 @@ struct SharedSetupFlowView: View {
     private var uid: String? { Auth.auth().currentUser?.uid }
 
     var body: some View {
-        VStack(spacing: 16) {
-            // Inline logout fallback (in case toolbar not visible)
-            HStack {
-                Spacer()
-                Button {
-                    do { try appController.signOut() } catch { /* optionally surface error */ }
-                } label: {
-                    Label("Log out", systemImage: "rectangle.portrait.and.arrow.right")
-                        .font(.footnote.weight(.semibold))
+        ZStack {
+            brand.background()
+
+            VStack(spacing: 20) {
+                // Top header with gradient and progress
+                HeaderWithProgress(
+                    title: "Set up your blocker together",
+                    subtitle: "Stay accountable with your mate. Choose times to block, approve each other, and you’re set.",
+                    stepIndex: setup.stepIndex,
+                    totalSteps: 2,
+                    brand: brand
+                )
+
+                // Info slides / small carousel
+                InfoCarousel(brand: brand)
+
+                if let errorMessage {
+                    Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(brand.error)
+                        .font(.footnote)
+                        .padding(.horizontal, 20)
+                        .transition(.opacity)
                 }
-                .buttonStyle(.plain)
-                .tint(.red)
-            }
 
-            if let errorMessage {
-                Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.red)
-                    .font(.footnote)
-            }
+                // Step content
+                Group {
+                    switch setup.step {
+                    case SetupStepID.blockSchedule:
+                        BlockScheduleStepView(
+                            myAnswer: myBlockAnswer,
+                            partnerAnswer: partnerBlockAnswer,
+                            myApproved: myApproved,
+                            partnerApproved: partnerApproved,
+                            mySubmitted: mySubmitted,
+                            partnerSubmitted: partnerSubmitted,
+                            onDraftChange: { ans in myDraftBlock = ans },
+                            onSubmit: { Task { await submitMyBlockProposal() } },
+                            onApprove: { Task { await approvePartnerProposalAndPersist() } },
+                            isSaving: isSaving,
+                            brand: brand,
+                            role: currentRole,
+                            phase: currentPhase
+                        )
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                    case SetupStepID.appSelection:
+                        AppSelectionStepView(
+                            myApproved: myApproved,
+                            partnerApproved: partnerApproved,
+                            onApprove: { Task { await approvePartnerProposalAndPersist() } },
+                            isSaving: isSaving,
+                            brand: brand,
+                            role: currentRole,
+                            phase: currentPhase
+                        )
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                    default:
+                        VStack(spacing: 8) {
+                            Text("Finalizing setup…")
+                            ProgressView().tint(brand.accent)
+                        }
+                    }
+                }
+                .padding(.horizontal, 20)
 
-            switch setup.step {
-            case SetupStepID.blockSchedule:
-                BlockScheduleStepView(
-                    myAnswer: myBlockAnswer,
-                    partnerAnswer: partnerBlockAnswer,
-                    myApproved: myApproved,
-                    partnerApproved: partnerApproved,
-                    mySubmitted: mySubmitted,
-                    partnerSubmitted: partnerSubmitted,
-                    onDraftChange: { ans in myDraftBlock = ans },
-                    onSubmit: { Task { await submitMyBlockProposal() } },
-                    onApprove: { Task { await approvePartnerProposalAndPersist() } },
-                    isSaving: isSaving,
-                    brand: brand,
-                    role: currentRole,
-                    phase: currentPhase
-                )
-            case SetupStepID.appSelection:
-                AppSelectionStepView(
-                    myApproved: myApproved,
-                    partnerApproved: partnerApproved,
-                    onApprove: { Task { await approvePartnerProposalAndPersist() } },
-                    isSaving: isSaving,
-                    brand: brand,
-                    role: currentRole,
-                    phase: currentPhase
-                )
-            default:
-                Text("Finalizing setup…")
-                ProgressView().tint(brand.accent)
-            }
+                Spacer(minLength: 0)
 
-            // Hidden navigation to home after completion
-            NavigationLink(isActive: $navigateToHome) {
-                WhisprHomeView()
-                    .navigationBarTitleDisplayMode(.inline)
-            } label: {
-                EmptyView()
-            }
-            .hidden()
+                // Inline logout as safe exit
+                HStack {
+                    Spacer()
+                    Button {
+                        do { try appController.signOut() } catch { }
+                    } label: {
+                        Label("Log out", systemImage: "rectangle.portrait.and.arrow.right")
+                            .font(.footnote.weight(.semibold))
+                    }
+                    .buttonStyle(.plain)
+                    .tint(.red)
+                }
+                .padding(.horizontal, 20)
 
-            Spacer()
+                // Hidden navigation to home after completion
+                NavigationLink(isActive: $navigateToHome) {
+                    WhisprHomeView()
+                        .navigationBarTitleDisplayMode(.inline)
+                } label: {
+                    EmptyView()
+                }
+                .hidden()
+            }
         }
-        .padding()
         .navigationTitle("Partner setup")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -206,6 +232,9 @@ struct SharedSetupFlowView: View {
                 navigateToHome = true
             }
         }
+        .tint(brand.accent)
+        .animation(.easeInOut(duration: 0.25), value: setup.step)
+        .animation(.easeInOut(duration: 0.25), value: setup.phase)
     }
 
     // MARK: - Derived values
@@ -380,11 +409,13 @@ struct SharedSetupFlowView: View {
             return
         }
 
+        guard let resolvedNext = nextPhase else { return }
+
         do {
             try await ref.setData([
                 "answers.\(uid)": payload,
                 "submitted.\(uid)": true,
-                "phase": nextPhase!.rawValue,
+                "phase": resolvedNext.rawValue,
                 "updatedAt": FieldValue.serverTimestamp()
             ], merge: true)
         } catch {
@@ -402,7 +433,7 @@ struct SharedSetupFlowView: View {
         let role = currentRole
 
         // Determine partner uid and payload to persist
-        guard let myUid = uid else { return }
+        let myUid = uid
         let partnerEntry = setup.answers.first { $0.key != myUid }
         let partnerUid = partnerEntry?.key
         let partnerPayload = partnerEntry?.value
@@ -463,6 +494,85 @@ struct SharedSetupFlowView: View {
     }
 }
 
+// MARK: - Header + Info
+
+private struct HeaderWithProgress: View {
+    let title: String
+    let subtitle: String
+    let stepIndex: Int
+    let totalSteps: Int
+    let brand: BrandPalette
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.title2.bold())
+                .foregroundStyle(brand.accent)
+
+            Text(subtitle)
+                .font(.callout)
+                .foregroundStyle(brand.secondaryText)
+
+            ProgressView(value: progress)
+                .tint(brand.accent)
+                .progressViewStyle(.linear)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 6)
+    }
+
+    private var progress: Double {
+        guard totalSteps > 0 else { return 0 }
+        let clampedIndex = max(0, min(stepIndex, totalSteps - 1))
+        return Double(clampedIndex + 1) / Double(totalSteps)
+    }
+}
+
+private struct InfoCarousel: View {
+    let brand: BrandPalette
+    @State private var index = 0
+
+    private let slides: [(String, String, String)] = [
+        ("hands.sparkles.fill", "Two mates. One goal.", "Team up to block gambling apps and keep each other accountable."),
+        ("clock.badge.checkmark", "Set your hours", "Pick times that work for both of you. Nights off? Early starts? Your call."),
+        ("bell.badge.fill", "Stay in the loop", "Get notified when your mate is active so you can nudge and support.")
+    ]
+
+    var body: some View {
+        TabView(selection: $index) {
+            ForEach(slides.indices, id: \.self) { i in
+                let slide = slides[i]
+                VStack(spacing: 10) {
+                    Image(systemName: slide.0)
+                        .font(.system(size: 28, weight: .bold))
+                        .foregroundStyle(brand.accent)
+
+                    Text(slide.1)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+
+                    Text(slide.2)
+                        .font(.subheadline)
+                        .foregroundStyle(brand.secondaryText)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 18)
+                }
+                .padding(.vertical, 14)
+                .frame(maxWidth: .infinity)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(brand.fieldBackground)
+                )
+                .padding(.horizontal, 20)
+                .tag(i)
+            }
+        }
+        .frame(height: 150)
+        .tabViewStyle(.page(indexDisplayMode: .automatic))
+    }
+}
+
 // MARK: - Step Views
 
 private struct BlockScheduleStepView: View {
@@ -486,77 +596,68 @@ private struct BlockScheduleStepView: View {
     @State private var end   = DateComponents(hour: 7, minute: 0)  // 7am default
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("What time would you like to block gambling apps?")
-                .font(.headline)
+        VStack(alignment: .leading, spacing: 14) {
+            // Card: My chooser
+            VStack(alignment: .leading, spacing: 10) {
+                Label("Your proposal", systemImage: "clock.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(brand.accent)
 
-            // My chooser
-            TimeRangePicker(title: "Your proposal", start: $start, end: $end, brand: brand)
-                .onChange(of: start) { _ in onDraftChange(currentAnswer) }
-                .onChange(of: end) { _ in onDraftChange(currentAnswer) }
-                .onAppear {
-                    if let my = myAnswer {
-                        start = minutesToComponents(my.startMinutes)
-                        end   = minutesToComponents(my.endMinutes)
+                TimeRangePicker(title: "", start: $start, end: $end, brand: brand)
+                    .onChange(of: start) { _ in onDraftChange(currentAnswer) }
+                    .onChange(of: end) { _ in onDraftChange(currentAnswer) }
+                    .onAppear {
+                        if let my = myAnswer {
+                            start = minutesToComponents(my.startMinutes)
+                            end   = minutesToComponents(my.endMinutes)
+                        }
                     }
-                }
 
-            // Submit status row
-            HStack(spacing: 8) {
-                if mySubmitted {
-                    Label("You submitted", systemImage: "paperplane.fill").foregroundStyle(.blue)
-                } else {
-                    Text("Not submitted yet")
-                        .font(.footnote)
-                        .foregroundStyle(brand.secondaryText)
-                }
-                Spacer()
-                if partnerSubmitted {
-                    Label("Partner submitted", systemImage: "paperplane").foregroundStyle(.blue)
-                } else {
-                    Text("Partner hasn’t submitted")
-                        .font(.footnote)
-                        .foregroundStyle(brand.secondaryText)
-                }
-            }
-
-            // Partner preview
-            if let partnerAnswer {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Partner’s proposal")
-                        .font(.subheadline.weight(.semibold))
-                    Text("\(formatMinutes(partnerAnswer.startMinutes)) → \(formatMinutes(partnerAnswer.endMinutes))")
-                        .foregroundStyle(brand.secondaryText)
-                }
-                .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(brand.fieldBackground)
-                )
-            } else {
-                Text("Waiting for your partner to choose…")
-                    .font(.footnote)
+                Text("Tip: Choose times when you’re most likely to be tempted — late nights or downtime.")
+                    .font(.caption)
                     .foregroundStyle(brand.secondaryText)
             }
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(brand.fieldBackground)
+            )
 
-            // Actions
+            // Submit / Partner status row
+            StatusRow(mySubmitted: mySubmitted, partnerSubmitted: partnerSubmitted, brand: brand)
+
+            // Partner preview card
             VStack(alignment: .leading, spacing: 8) {
+                Label("Partner’s proposal", systemImage: "person.2.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+
+                if let partnerAnswer {
+                    Text("\(formatMinutes(partnerAnswer.startMinutes)) → \(formatMinutes(partnerAnswer.endMinutes))")
+                        .font(.callout)
+                        .foregroundStyle(brand.secondaryText)
+                } else {
+                    Text(waitingPartnerText)
+                        .font(.callout)
+                        .foregroundStyle(brand.secondaryText)
+                }
+            }
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(brand.fieldBackground)
+            )
+
+            // Primary action area
+            VStack(alignment: .leading, spacing: 10) {
                 if role == "A", phase == .awaitingASubmission {
-                    Button("Submit your proposal", action: onSubmit)
-                        .buttonStyle(.borderedProminent)
-                        .disabled(isSaving)
+                    PrimaryActionButton(title: "Submit your proposal", isLoading: isSaving, brand: brand, action: onSubmit)
                 } else if role == "B", phase == .awaitingBApproval {
-                    Button("Approve partner’s proposal", action: onApprove)
-                        .buttonStyle(.borderedProminent)
-                        .disabled(isSaving || partnerAnswer == nil)
+                    PrimaryActionButton(title: "Approve partner’s proposal", isLoading: isSaving, brand: brand, action: onApprove, disabled: partnerAnswer == nil)
                 } else if role == "B", phase == .awaitingBSubmission {
-                    Button("Submit your proposal", action: onSubmit)
-                        .buttonStyle(.borderedProminent)
-                        .disabled(isSaving)
+                    PrimaryActionButton(title: "Submit your proposal", isLoading: isSaving, brand: brand, action: onSubmit)
                 } else if role == "A", phase == .awaitingAApproval {
-                    Button("Approve partner’s proposal", action: onApprove)
-                        .buttonStyle(.borderedProminent)
-                        .disabled(isSaving || partnerAnswer == nil)
+                    PrimaryActionButton(title: "Approve partner’s proposal", isLoading: isSaving, brand: brand, action: onApprove, disabled: partnerAnswer == nil)
                 } else if phase == .complete {
                     Label("Completed", systemImage: "checkmark.circle.fill")
                         .foregroundStyle(.green)
@@ -569,6 +670,16 @@ private struct BlockScheduleStepView: View {
                     }
                 }
             }
+        }
+    }
+
+    private var waitingPartnerText: String {
+        if role == "A", phase == .awaitingASubmission {
+            return "Pick a time range and submit to share with your partner."
+        } else if role == "B", phase == .awaitingBSubmission {
+            return "Pick a time range and submit to share with your partner."
+        } else {
+            return "Waiting for your partner to choose…"
         }
     }
 
@@ -613,29 +724,116 @@ private struct BlockScheduleStepView: View {
     }
 }
 
+private struct StatusRow: View {
+    var mySubmitted: Bool
+    var partnerSubmitted: Bool
+    let brand: BrandPalette
+
+    var body: some View {
+        HStack(spacing: 10) {
+            if mySubmitted {
+                Label("You submitted", systemImage: "paperplane.fill")
+                    .foregroundStyle(brand.accent)
+            } else {
+                Text("Not submitted yet")
+                    .font(.footnote)
+                    .foregroundStyle(brand.secondaryText)
+            }
+            Spacer()
+            if partnerSubmitted {
+                Label("Partner submitted", systemImage: "paperplane")
+                    .foregroundStyle(brand.accent)
+            } else {
+                Text("Partner hasn’t submitted")
+                    .font(.footnote)
+                    .foregroundStyle(brand.secondaryText)
+            }
+        }
+    }
+}
+
+private struct PrimaryActionButton: View {
+    let title: String
+    var isLoading: Bool
+    let brand: BrandPalette
+    var action: () -> Void
+    var disabled: Bool = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                if isLoading {
+                    ProgressView().tint(.white)
+                }
+                Text(title).fontWeight(.semibold)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .disabled(disabled || isLoading)
+    }
+}
+
 private struct TimeRangePicker: View {
     let title: String
     @Binding var start: DateComponents
     @Binding var end: DateComponents
     let brand: BrandPalette
 
+    @State private var startDate: Date = Date()
+    @State private var endDate: Date = Date()
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-            HStack {
-                DatePicker("Start", selection: .constant(Calendar.current.date(from: start) ?? Date()), displayedComponents: [.hourAndMinute])
+            if !title.isEmpty {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+            }
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Start").font(.caption).foregroundStyle(.secondary)
+                    DatePicker("", selection: Binding(
+                        get: { startDateFromComponents(start) },
+                        set: { newDate in
+                            start = componentsFromDate(newDate)
+                            startDate = newDate
+                        }
+                    ), displayedComponents: [.hourAndMinute])
                     .labelsHidden()
-                Text("→")
-                DatePicker("End", selection: .constant(Calendar.current.date(from: end) ?? Date()), displayedComponents: [.hourAndMinute])
+                }
+
+                Image(systemName: "arrow.right")
+                    .foregroundStyle(.secondary)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("End").font(.caption).foregroundStyle(.secondary)
+                    DatePicker("", selection: Binding(
+                        get: { startDateFromComponents(end) },
+                        set: { newDate in
+                            end = componentsFromDate(newDate)
+                            endDate = newDate
+                        }
+                    ), displayedComponents: [.hourAndMinute])
                     .labelsHidden()
+                }
             }
             .padding(12)
             .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(brand.fieldBackground)
             )
         }
+        .onAppear {
+            startDate = startDateFromComponents(start)
+            endDate = startDateFromComponents(end)
+        }
+    }
+
+    private func startDateFromComponents(_ comps: DateComponents) -> Date {
+        Calendar.current.date(from: comps) ?? Calendar.current.date(bySettingHour: comps.hour ?? 0, minute: comps.minute ?? 0, second: 0, of: Date()) ?? Date()
+    }
+
+    private func componentsFromDate(_ date: Date) -> DateComponents {
+        Calendar.current.dateComponents([.hour, .minute], from: date)
     }
 }
 
@@ -653,15 +851,14 @@ private struct AppSelectionStepView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Which apps should be blocked?")
                 .font(.headline)
+                .foregroundStyle(.primary)
 
             Text("App selection UI goes here (list of installed apps, suggested gambling apps, etc.).")
                 .foregroundStyle(brand.secondaryText)
                 .font(.footnote)
 
             if role == "A", phase == .awaitingAApproval {
-                Button("Approve partner’s selection", action: onApprove)
-                    .buttonStyle(.borderedProminent)
-                    .disabled(isSaving)
+                PrimaryActionButton(title: "Approve partner’s selection", isLoading: isSaving, brand: brand, action: onApprove)
             } else if phase == .complete {
                 Label("Completed", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
@@ -674,5 +871,10 @@ private struct AppSelectionStepView: View {
                 }
             }
         }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(brand.fieldBackground)
+        )
     }
 }
