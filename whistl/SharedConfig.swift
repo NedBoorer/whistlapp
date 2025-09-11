@@ -1,0 +1,168 @@
+//
+//  SharedConfig.swift
+//  whistl
+//
+//  Created by Ned Boorer on 11/9/2025.
+//
+
+import Foundation
+import FamilyControls
+import ManagedSettings
+
+// MARK: - App Group and Notification
+
+// If you don't use an extension yet, this can stay as-is.
+// When you add an extension, make sure this App Group exists in Signing & Capabilities.
+public let appGroupID = "group.whistl"
+
+// Darwin notification name used to nudge an extension or other process that config changed.
+public let kConfigDidChangeDarwinName = "com.whistl.configDidChange"
+
+// MARK: - Keys
+
+public enum SharedKeys {
+    public static let isAuthorized          = "fc_isAuthorized"
+    public static let isScheduleEnabled     = "fc_isScheduleEnabled"
+    public static let isManualBlockActive   = "fc_isManualBlockActive"
+    public static let startMinutes          = "fc_startMinutes"
+    public static let endMinutes            = "fc_endMinutes"
+    public static let appTokensDataArray    = "fc_appTokensDataArray"
+    public static let categoryTokensDataArr = "fc_categoryTokensDataArray"
+}
+
+// MARK: - Shared Storage
+
+public struct SharedConfigStore {
+    public static var defaults: UserDefaults {
+        // Use the app group if available; otherwise fall back to standard (keeps you compiling even without capabilities set up).
+        UserDefaults(suiteName: appGroupID) ?? .standard
+    }
+
+    // Save/load the FamilyActivitySelection by encoding token sets to Data blobs.
+    public static func save(selection: FamilyActivitySelection) {
+        let encoder = JSONEncoder()
+
+        let appDataArray: [Data] = selection.applicationTokens.compactMap { token in
+            try? encoder.encode(token)
+        }
+        let catDataArray: [Data] = selection.categoryTokens.compactMap { token in
+            try? encoder.encode(token)
+        }
+
+        defaults.set(appDataArray, forKey: SharedKeys.appTokensDataArray)
+        defaults.set(catDataArray, forKey: SharedKeys.categoryTokensDataArr)
+        
+        // Post notification that config changed
+        postConfigDidChangeDarwinNotification()
+    }
+
+    public static func loadSelection() -> FamilyActivitySelection {
+        var selection = FamilyActivitySelection()
+        let decoder = JSONDecoder()
+
+        if let appData = defaults.array(forKey: SharedKeys.appTokensDataArray) as? [Data] {
+            let tokens: [ApplicationToken] = appData.compactMap { data in
+                try? decoder.decode(ApplicationToken.self, from: data)
+            }
+            selection.applicationTokens = Set(tokens)
+        }
+
+        if let catData = defaults.array(forKey: SharedKeys.categoryTokensDataArr) as? [Data] {
+            let tokens: [ActivityCategoryToken] = catData.compactMap { data in
+                try? decoder.decode(ActivityCategoryToken.self, from: data)
+            }
+            selection.categoryTokens = Set(tokens)
+        }
+        return selection
+    }
+
+    // Flags / schedule
+    public static func save(isScheduleEnabled: Bool) {
+        defaults.set(isScheduleEnabled, forKey: SharedKeys.isScheduleEnabled)
+        postConfigDidChangeDarwinNotification()
+    }
+    
+    public static func save(isManualBlockActive: Bool) {
+        defaults.set(isManualBlockActive, forKey: SharedKeys.isManualBlockActive)
+        postConfigDidChangeDarwinNotification()
+    }
+    
+    public static func save(startMinutes: Int, endMinutes: Int) {
+        defaults.set(startMinutes, forKey: SharedKeys.startMinutes)
+        defaults.set(endMinutes, forKey: SharedKeys.endMinutes)
+        postConfigDidChangeDarwinNotification()
+    }
+    
+    public static func save(isAuthorized: Bool) {
+        defaults.set(isAuthorized, forKey: SharedKeys.isAuthorized)
+        postConfigDidChangeDarwinNotification()
+    }
+
+    public static func loadIsScheduleEnabled() -> Bool {
+        defaults.bool(forKey: SharedKeys.isScheduleEnabled)
+    }
+    
+    public static func loadIsManualBlockActive() -> Bool {
+        defaults.bool(forKey: SharedKeys.isManualBlockActive)
+    }
+    
+    public static func loadStartMinutes() -> Int {
+        // Default to 9:00 PM
+        defaults.object(forKey: SharedKeys.startMinutes) as? Int ?? (21 * 60)
+    }
+    
+    public static func loadEndMinutes() -> Int {
+        // Default to 7:00 AM
+        defaults.object(forKey: SharedKeys.endMinutes) as? Int ?? (7 * 60)
+    }
+    
+    public static func loadIsAuthorized() -> Bool {
+        defaults.bool(forKey: SharedKeys.isAuthorized)
+    }
+}
+
+// MARK: - Darwin Notification
+
+public func postConfigDidChangeDarwinNotification() {
+    let center = CFNotificationCenterGetDarwinNotifyCenter()
+    CFNotificationCenterPostNotification(center,
+                                         CFNotificationName(kConfigDidChangeDarwinName as CFString),
+                                         nil,
+                                         nil,
+                                         true)
+}
+
+
+
+// MARK: - Time Window Helper
+
+// Returns true if `now` is inside the daily window [start, end), correctly handling overnight windows.
+public func isNowInsideWindow(now: Date = Date(), startMinutes: Int, endMinutes: Int, calendar: Calendar = .current) -> Bool {
+    // Validate input
+    guard startMinutes >= 0, startMinutes < 24 * 60,
+          endMinutes >= 0, endMinutes < 24 * 60 else {
+        return false
+    }
+    
+    let startHour = startMinutes / 60
+    let startMin  = startMinutes % 60
+    let endHour   = endMinutes / 60
+    let endMin    = endMinutes % 60
+
+    guard let startToday = calendar.date(bySettingHour: startHour, minute: startMin, second: 0, of: now),
+          let endToday = calendar.date(bySettingHour: endHour, minute: endMin, second: 0, of: now) else {
+        return false
+    }
+
+    if startToday == endToday {
+        return false // zero-length window
+    }
+    
+    if startToday < endToday {
+        // Same-day window
+        return now >= startToday && now < endToday
+    } else {
+        // Overnight window (e.g., 21:00 -> 07:00)
+        return now >= startToday || now < endToday
+    }
+}

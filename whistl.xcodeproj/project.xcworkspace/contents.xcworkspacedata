@@ -4,4 +4,10 @@
    <FileRef
       location = "self:">
    </FileRef>
+   <FileRef
+      location = "group:SharedConfig.swift">
+   </FileRef>
+   <FileRef
+      location = "group:ShieldDataSourceAndEnforcer.swift">
+   </FileRef>
 </Workspace>

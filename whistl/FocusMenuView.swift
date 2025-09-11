@@ -1,3 +1,11 @@
+//
+//  FocusMenuView.swift
+//  whistl
+//
+//  Created by Ned Boorer on 11/9/2025.
+//
+
+
 import SwiftUI
 import FamilyControls
 import ManagedSettings
@@ -35,8 +43,24 @@ struct FocusMenuView: View {
         .navigationTitle("Blocking menu")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showingPicker) {
-            FamilyActivityPicker(selection: $model.selection)
-                .presentationDetents([.large])
+            NavigationStack {
+                FamilyActivityPicker(selection: $model.selection)
+                    .navigationTitle("Choose activities")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Done") {
+                                showingPicker = false
+                            }
+                        }
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Cancel") {
+                                showingPicker = false
+                            }
+                        }
+                    }
+            }
+            .presentationDetents([.large])
         }
         .onChange(of: model.selection) { _ in
             model.updateSelection(model.selection)
@@ -48,7 +72,7 @@ struct FocusMenuView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Screen Time blocking")
                 .font(.title3.bold())
-            Text("Choose apps and a time window. We’ll block them during that window each day.")
+            Text("Choose apps and a time window. We’ll block them during that window each day, or block immediately with Block now.")
                 .font(.callout)
                 .foregroundStyle(brand.secondaryText)
         }
@@ -158,15 +182,17 @@ struct FocusMenuView: View {
 
             HStack {
                 Button {
-                    model.evaluateAndApplyShield()
+                    model.activateManualBlock()
                 } label: {
-                    Label("Apply now", systemImage: "play.fill")
+                    Label("Block now", systemImage: "play.fill")
                         .fontWeight(.semibold)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(brand.accent)
+                .disabled(!model.isAuthorized || (model.selection.applicationTokens.isEmpty && model.selection.categoryTokens.isEmpty))
 
                 Button {
+                    model.deactivateManualBlock()
                     model.clearShield()
                 } label: {
                     Label("Clear", systemImage: "stop.fill")
@@ -187,7 +213,7 @@ struct FocusMenuView: View {
                 Circle()
                     .fill(model.isShieldActive ? Color.red : Color.gray.opacity(0.4))
                     .frame(width: 10, height: 10)
-                Text(model.isShieldActive ? "Blocking active" : "Blocking inactive")
+                Text(model.isShieldActive ? (model.isManualBlockActive ? "Blocking active (manual)" : "Blocking active (scheduled)") : "Blocking inactive")
                     .font(.callout)
                 Spacer()
             }

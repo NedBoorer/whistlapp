@@ -15,6 +15,19 @@ struct WhisprHomeView: View {
                 .foregroundStyle(brand.secondaryText)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
+            // Entry point to the Screen Time blocking menu
+            NavigationLink {
+                FocusMenuView()
+                    .navigationBarTitleDisplayMode(.inline)
+            } label: {
+                Label("Open blocking menu", systemImage: "lock.shield")
+                    .frame(maxWidth: .infinity)
+                    .fontWeight(.semibold)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(brand.accent)
+            .padding(.top, 8)
+
             Spacer()
         }
         .padding()

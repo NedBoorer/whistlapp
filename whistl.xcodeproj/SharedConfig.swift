@@ -2,8 +2,8 @@
 //  SharedConfig.swift
 //  whistl
 //
-//  Shared between app and shield extension.
-//  Make sure this file is added to BOTH targets: the app and the shield extension.
+//  Shared between app and (optionally) a shield extension.
+//  If you create a Managed Settings extension, add this file to BOTH targets.
 //
 
 import Foundation
@@ -12,9 +12,11 @@ import ManagedSettings
 
 // MARK: - App Group and Notification
 
+// If you don’t use an extension yet, this can stay as-is.
+// When you add an extension, make sure this App Group exists in Signing & Capabilities.
 public let appGroupID = "group.whistl"
 
-// Darwin notification to wake the extension when the app updates config
+// Darwin notification name used to nudge an extension or other process that config changed.
 public let kConfigDidChangeDarwinName = "com.whistl.configDidChange"
 
 // MARK: - Keys
@@ -33,10 +35,11 @@ public enum SharedKeys {
 
 public struct SharedConfigStore {
     public static var defaults: UserDefaults {
+        // Use the app group if available; otherwise fall back to standard (keeps you compiling even without capabilities set up).
         UserDefaults(suiteName: appGroupID) ?? .standard
     }
 
-    // Selection encode/decode
+    // Save/load the FamilyActivitySelection by storing token data representations.
     public static func save(selection: FamilyActivitySelection) {
         let appData = selection.applicationTokens.map { $0.dataRepresentation }
         let catData = selection.categoryTokens.map { $0.dataRepresentation }
@@ -77,9 +80,11 @@ public struct SharedConfigStore {
         defaults.bool(forKey: SharedKeys.isManualBlockActive)
     }
     public static func loadStartMinutes() -> Int {
+        // Default to 9:00 PM
         defaults.object(forKey: SharedKeys.startMinutes) as? Int ?? (21 * 60)
     }
     public static func loadEndMinutes() -> Int {
+        // Default to 7:00 AM
         defaults.object(forKey: SharedKeys.endMinutes) as? Int ?? (7 * 60)
     }
     public static func loadIsAuthorized() -> Bool {
@@ -87,15 +92,19 @@ public struct SharedConfigStore {
     }
 }
 
-// MARK: - Notification
+// MARK: - Darwin Notification
 
 public func postConfigDidChangeDarwinNotification() {
     let center = CFNotificationCenterGetDarwinNotifyCenter()
-    CFNotificationCenterPostNotification(center, CFNotificationName(kConfigDidChangeDarwinName as CFString), nil, nil, true)
+    CFNotificationCenterPostNotification(center,
+                                         CFNotificationName(kConfigDidChangeDarwinName as CFString),
+                                         nil,
+                                         nil,
+                                         true)
 }
 
+// Optional: if you need to listen for changes in an extension or companion process
 public final class DarwinConfigObserver {
-    private var token: CFNotificationCenter?
     private var isObserving = false
 
     public init() {}
@@ -110,7 +119,6 @@ public final class DarwinConfigObserver {
                                         kConfigDidChangeDarwinName as CFString,
                                         nil,
                                         .deliverImmediately)
-        token = center
     }
 
     deinit {
@@ -118,14 +126,15 @@ public final class DarwinConfigObserver {
     }
 
     public func stopObserving() {
-        guard isObserving, let center = token else { return }
+        let center = CFNotificationCenterGetDarwinNotifyCenter()
         CFNotificationCenterRemoveEveryObserver(center, Unmanaged.passUnretained(self).toOpaque())
         isObserving = false
     }
 }
 
-// MARK: - Time Window
+// MARK: - Time Window Helper
 
+// Returns true if `now` is inside the daily window [start, end), correctly handling overnight windows.
 public func isNowInsideWindow(now: Date = Date(), startMinutes: Int, endMinutes: Int, calendar: Calendar = .current) -> Bool {
     let startHour = startMinutes / 60
     let startMin  = startMinutes % 60
@@ -135,11 +144,12 @@ public func isNowInsideWindow(now: Date = Date(), startMinutes: Int, endMinutes:
     let startToday = calendar.date(bySettingHour: startHour, minute: startMin, second: 0, of: now) ?? now
     let endToday   = calendar.date(bySettingHour: endHour, minute: endMin, second: 0, of: now) ?? now
 
-    if startToday == endToday { return false }
+    if startToday == endToday { return false } // zero-length window
     if startToday < endToday {
+        // Same-day window
         return now >= startToday && now < endToday
     } else {
+        // Overnight window (e.g., 21:00 -> 07:00)
         return now >= startToday || now < endToday
     }
 }
-

@@ -32,18 +32,10 @@ struct ContentView: View {
                     .tint(brand.accent)
 
                 case .authenticated:
-                    // After sign-in:
-                    // - If not paired: go to pairing flow.
-                    // - If paired: go to shared rules setup.
+                    // For testing: skip pairing/setup and go straight to home (which links to the blocker UI).
                     NavigationStack {
-                        if appController.isPaired {
-                            SharedSetupFlowView()
-                                .navigationBarTitleDisplayMode(.inline)
-                        } else {
-                            PairingGateView()
-                                .navigationTitle("Link with a partner")
-                                .navigationBarTitleDisplayMode(.inline)
-                        }
+                        WhisprHomeView()
+                            .navigationBarTitleDisplayMode(.inline)
                     }
                     .tint(brand.accent)
                 }
