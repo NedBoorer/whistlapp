@@ -6,14 +6,14 @@
 //
 
 import SwiftUI
-import DeviceActivityUI
+import DeviceActivity
+import ManagedSettings
 
 // Hosts your Device Activity Report Extension inside the app.
-// Starts with the "Home" context; users can navigate within the report UI.
+// This is the correct approach - you cannot directly query DeviceActivityCenter for results
+// from the main app. The data must come through a DeviceActivityReport extension.
 struct ReportHostView: View {
     var body: some View {
-        // The initializer with a context asks the OS to display the matching
-        // DeviceActivityReportScene provided by your ReportExtension target.
         DeviceActivityReport(.home)
             .navigationTitle("Screen Time")
             .navigationBarTitleDisplayMode(.inline)

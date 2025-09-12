@@ -43,11 +43,11 @@ struct HomeReportView: View {
 
             if !model.categoryMinutes.isEmpty {
                 Section("Categories (min)") {
-                    ForEach(model.categoryMinutes.prefix(5), id: \.0) { item in
+                    ForEach(model.categoryMinutes.prefix(5), id: \.name) { item in
                         HStack {
-                            Text(item.0)
+                            Text(item.name)
                             Spacer()
-                            Text("\(Int(item.1))m")
+                            Text("\(Int(item.value))m")
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -60,12 +60,11 @@ struct HomeReportView: View {
 #Preview {
     HomeReportView(model: ChartAndTopThreeReport(
         totalDuration: 5400,
-        categoryMinutes: [("Social", 60), ("Productivity", 30)],
-        appMinutes: [("Messages", 55), ("Safari", 35)],
+        categoryMinutes: [NamedMinutes(name: "Social", value: 60), NamedMinutes(name: "Productivity", value: 30)],
+        appMinutes: [NamedMinutes(name: "Messages", value: 55), NamedMinutes(name: "Safari", value: 35)],
         topThree: [
             AppDeviceActivity(name: "Messages", bundleIdentifier: nil, duration: 3300, numberOfPickups: 0, numberOfNotifications: 0),
             AppDeviceActivity(name: "Safari", bundleIdentifier: nil, duration: 2100, numberOfPickups: 0, numberOfNotifications: 0)
         ]
     ))
 }
-

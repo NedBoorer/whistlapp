@@ -7,9 +7,19 @@
 		<key>Promises (Playground).xcscheme</key>
 		<dict>
 			<key>orderHint</key>
+			<integer>3</integer>
+		</dict>
+		<key>ReportExtension.xcscheme_^#shared#^_</key>
+		<dict>
+			<key>orderHint</key>
 			<integer>0</integer>
 		</dict>
 		<key>shieldwhistl.xcscheme_^#shared#^_</key>
+		<dict>
+			<key>orderHint</key>
+			<integer>2</integer>
+		</dict>
+		<key>shieldwhistlconfig.xcscheme_^#shared#^_</key>
 		<dict>
 			<key>orderHint</key>
 			<integer>1</integer>
@@ -17,7 +27,35 @@
 		<key>whistl.xcscheme_^#shared#^_</key>
 		<dict>
 			<key>orderHint</key>
-			<integer>0</integer>
+			<integer>4</integer>
+		</dict>
+		<key>whistldeviceactivity.xcscheme_^#shared#^_</key>
+		<dict>
+			<key>orderHint</key>
+			<integer>4</integer>
+		</dict>
+	</dict>
+	<key>SuppressBuildableAutocreation</key>
+	<dict>
+		<key>88702FA62E6EB154003D5061</key>
+		<dict>
+			<key>primary</key>
+			<true/>
+		</dict>
+		<key>88A771352E72886D0024A9D5</key>
+		<dict>
+			<key>primary</key>
+			<true/>
+		</dict>
+		<key>88F430E62E7297D400596C4E</key>
+		<dict>
+			<key>primary</key>
+			<true/>
+		</dict>
+		<key>88F4318C2E7388BC00596C4E</key>
+		<dict>
+			<key>primary</key>
+			<true/>
 		</dict>
 	</dict>
 </dict>

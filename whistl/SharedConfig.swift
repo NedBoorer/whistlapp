@@ -11,11 +11,7 @@ import ManagedSettings
 
 // MARK: - App Group and Notification
 
-// If you don't use an extension yet, this can stay as-is.
-// When you add an extension, make sure this App Group exists in Signing & Capabilities.
 public let appGroupID = "group.whistl"
-
-// Darwin notification name used to nudge an extension or other process that config changed.
 public let kConfigDidChangeDarwinName = "com.whistl.configDidChange"
 
 // MARK: - Keys
@@ -28,13 +24,20 @@ public enum SharedKeys {
     public static let endMinutes            = "fc_endMinutes"
     public static let appTokensDataArray    = "fc_appTokensDataArray"
     public static let categoryTokensDataArr = "fc_categoryTokensDataArray"
+
+    // Analytics
+    public static let attemptsLog           = "fc_attemptsLog_v1"          // [AttemptEvent]
+    public static let blockedAccumulations  = "fc_blockedAccum_v1"         // [String: Double] keyed by yyyy-MM-dd (seconds)
+    public static let currentBlockStart     = "fc_currentBlockStart_v1"    // Date when shield last turned on (if active)
+
+    // Pause/break
+    public static let pauseUntil            = "fc_pauseUntil_v1"           // Date when pause ends
 }
 
 // MARK: - Shared Storage
 
 public struct SharedConfigStore {
     public static var defaults: UserDefaults {
-        // Use the app group if available; otherwise fall back to standard (keeps you compiling even without capabilities set up).
         UserDefaults(suiteName: appGroupID) ?? .standard
     }
 
@@ -51,9 +54,6 @@ public struct SharedConfigStore {
 
         defaults.set(appDataArray, forKey: SharedKeys.appTokensDataArray)
         defaults.set(catDataArray, forKey: SharedKeys.categoryTokensDataArr)
-        
-        // Post notification that config changed
-        postConfigDidChangeDarwinNotification()
     }
 
     public static func loadSelection() -> FamilyActivitySelection {
@@ -79,45 +79,184 @@ public struct SharedConfigStore {
     // Flags / schedule
     public static func save(isScheduleEnabled: Bool) {
         defaults.set(isScheduleEnabled, forKey: SharedKeys.isScheduleEnabled)
-        postConfigDidChangeDarwinNotification()
     }
-    
     public static func save(isManualBlockActive: Bool) {
         defaults.set(isManualBlockActive, forKey: SharedKeys.isManualBlockActive)
-        postConfigDidChangeDarwinNotification()
     }
-    
     public static func save(startMinutes: Int, endMinutes: Int) {
         defaults.set(startMinutes, forKey: SharedKeys.startMinutes)
         defaults.set(endMinutes, forKey: SharedKeys.endMinutes)
-        postConfigDidChangeDarwinNotification()
     }
-    
     public static func save(isAuthorized: Bool) {
         defaults.set(isAuthorized, forKey: SharedKeys.isAuthorized)
-        postConfigDidChangeDarwinNotification()
     }
 
     public static func loadIsScheduleEnabled() -> Bool {
         defaults.bool(forKey: SharedKeys.isScheduleEnabled)
     }
-    
     public static func loadIsManualBlockActive() -> Bool {
         defaults.bool(forKey: SharedKeys.isManualBlockActive)
     }
-    
     public static func loadStartMinutes() -> Int {
-        // Default to 9:00 PM
         defaults.object(forKey: SharedKeys.startMinutes) as? Int ?? (21 * 60)
     }
-    
     public static func loadEndMinutes() -> Int {
-        // Default to 7:00 AM
         defaults.object(forKey: SharedKeys.endMinutes) as? Int ?? (7 * 60)
     }
-    
     public static func loadIsAuthorized() -> Bool {
         defaults.bool(forKey: SharedKeys.isAuthorized)
+    }
+
+    // Pause/break
+    public static func savePause(until date: Date?) {
+        if let date {
+            defaults.set(date, forKey: SharedKeys.pauseUntil)
+        } else {
+            defaults.removeObject(forKey: SharedKeys.pauseUntil)
+        }
+    }
+
+    public static func loadPauseUntil() -> Date? {
+        defaults.object(forKey: SharedKeys.pauseUntil) as? Date
+    }
+
+    public static func isPaused(now: Date = Date()) -> Bool {
+        if let until = loadPauseUntil() {
+            return now < until
+        }
+        return false
+    }
+}
+
+// MARK: - Analytics (Attempts + Blocked time)
+
+public struct AttemptEvent: Codable, Equatable {
+    public let date: Date
+    public let kind: String   // "app" or "category"
+    public let identifier: String // token identifier or fallback string
+    
+    public init(date: Date, kind: String, identifier: String) {
+        self.date = date
+        self.kind = kind
+        self.identifier = identifier
+    }
+}
+
+public enum AnalyticsStore {
+    // Append an attempt event
+    public static func logAttempt(for application: ApplicationToken) {
+        // ApplicationTokens are opaque for privacy - use a generic identifier
+        let identifier = "app_\(application.hashValue)"
+        appendAttempt(kind: "app", identifier: identifier)
+    }
+
+    public static func logAttempt(for category: ActivityCategoryToken) {
+        // ActivityCategoryTokens are opaque for privacy - use a generic identifier
+        let identifier = "category_\(category.hashValue)"
+        appendAttempt(kind: "category", identifier: identifier)
+    }
+
+    private static func appendAttempt(kind: String, identifier: String) {
+        let event = AttemptEvent(date: Date(), kind: kind, identifier: identifier)
+        var events = loadAttempts()
+        events.append(event)
+        saveAttempts(events)
+    }
+
+    private static func saveAttempts(_ events: [AttemptEvent]) {
+        let encoder = JSONEncoder()
+        if let data = try? encoder.encode(events) {
+            SharedConfigStore.defaults.set(data, forKey: SharedKeys.attemptsLog)
+        }
+    }
+
+    public static func loadAttempts() -> [AttemptEvent] {
+        guard let data = SharedConfigStore.defaults.data(forKey: SharedKeys.attemptsLog) else { return [] }
+        let decoder = JSONDecoder()
+        return (try? decoder.decode([AttemptEvent].self, from: data)) ?? []
+    }
+
+    // Return attempts that occurred "today" in the current calendar
+    public static func attemptsToday(calendar: Calendar = .current) -> [AttemptEvent] {
+        let events = loadAttempts()
+        let startOfDay = calendar.startOfDay(for: Date())
+        return events.filter { $0.date >= startOfDay }
+    }
+
+    // Top culprits by attempts today
+    public static func topCulpritsToday(limit: Int = 5, calendar: Calendar = .current) -> [(identifier: String, count: Int, kind: String)] {
+        let todays = attemptsToday(calendar: calendar)
+        var counts: [String: (count: Int, kind: String)] = [:]
+        for e in todays {
+            let key = "\(e.kind):\(e.identifier)"
+            let current = counts[key]?.count ?? 0
+            counts[key] = (current + 1, e.kind)
+        }
+        let sorted = counts.sorted { $0.value.count > $1.value.count }
+        return Array(sorted.prefix(limit)).map { entry in
+            let comps = entry.key.split(separator: ":", maxSplits: 1).map(String.init)
+            let kind = comps.first ?? "app"
+            let id = comps.count > 1 ? comps[1] : entry.key
+            return (identifier: id, count: entry.value.count, kind: kind)
+        }
+    }
+
+    // Blocked time accumulation (seconds) keyed by yyyy-MM-dd
+    public static func markShieldActivated(now: Date = Date(), calendar: Calendar = .current) {
+        // If already active, ignore
+        if SharedConfigStore.defaults.object(forKey: SharedKeys.currentBlockStart) as? Date != nil { return }
+        SharedConfigStore.defaults.set(now, forKey: SharedKeys.currentBlockStart)
+    }
+
+    public static func markShieldDeactivated(now: Date = Date(), calendar: Calendar = .current) {
+        guard let start = SharedConfigStore.defaults.object(forKey: SharedKeys.currentBlockStart) as? Date else { return }
+        SharedConfigStore.defaults.removeObject(forKey: SharedKeys.currentBlockStart)
+        let seconds = max(0, now.timeIntervalSince(start))
+        accumulate(seconds: seconds, at: start, calendar: calendar)
+    }
+
+    // Should be called periodically if a block spans midnight or app relaunch
+    public static func finalizeIfDayRolledOver(now: Date = Date(), calendar: Calendar = .current) {
+        guard let start = SharedConfigStore.defaults.object(forKey: SharedKeys.currentBlockStart) as? Date else { return }
+        let startDay = calendar.startOfDay(for: start)
+        let today = calendar.startOfDay(for: now)
+        guard today > startDay else { return }
+        // Accumulate up to 23:59:59 of the start day
+        if let endOfStartDay = calendar.date(byAdding: DateComponents(day: 1, second: -1), to: startDay) {
+            let seconds = max(0, endOfStartDay.timeIntervalSince(start))
+            accumulate(seconds: seconds, at: start, calendar: calendar)
+            // Restart block at beginning of today
+            SharedConfigStore.defaults.set(today, forKey: SharedKeys.currentBlockStart)
+        }
+    }
+
+    public static func blockedSecondsToday(now: Date = Date(), calendar: Calendar = .current) -> Int {
+        finalizeIfDayRolledOver(now: now, calendar: calendar)
+        let key = dayKey(for: now, calendar: calendar)
+        let dict = (SharedConfigStore.defaults.dictionary(forKey: SharedKeys.blockedAccumulations) as? [String: Double]) ?? [:]
+        var total = Int(dict[key] ?? 0)
+        // If currently blocking, add delta since start
+        if let currentStart = SharedConfigStore.defaults.object(forKey: SharedKeys.currentBlockStart) as? Date {
+            let startOfToday = calendar.startOfDay(for: now)
+            let effectiveStart = max(currentStart, startOfToday)
+            total += Int(max(0, now.timeIntervalSince(effectiveStart)))
+        }
+        return total
+    }
+
+    private static func accumulate(seconds: TimeInterval, at date: Date, calendar: Calendar) {
+        let key = dayKey(for: date, calendar: calendar)
+        var dict = (SharedConfigStore.defaults.dictionary(forKey: SharedKeys.blockedAccumulations) as? [String: Double]) ?? [:]
+        dict[key] = (dict[key] ?? 0) + seconds
+        SharedConfigStore.defaults.set(dict, forKey: SharedKeys.blockedAccumulations)
+    }
+
+    private static func dayKey(for date: Date, calendar: Calendar) -> String {
+        let comps = calendar.dateComponents([.year, .month, .day], from: date)
+        let y = comps.year ?? 0
+        let m = comps.month ?? 0
+        let d = comps.day ?? 0
+        return String(format: "%04d-%02d-%02d", y, m, d)
     }
 }
 
@@ -133,36 +272,22 @@ public func postConfigDidChangeDarwinNotification() {
 }
 
 
-
 // MARK: - Time Window Helper
 
-// Returns true if `now` is inside the daily window [start, end), correctly handling overnight windows.
 public func isNowInsideWindow(now: Date = Date(), startMinutes: Int, endMinutes: Int, calendar: Calendar = .current) -> Bool {
-    // Validate input
-    guard startMinutes >= 0, startMinutes < 24 * 60,
-          endMinutes >= 0, endMinutes < 24 * 60 else {
-        return false
-    }
-    
     let startHour = startMinutes / 60
     let startMin  = startMinutes % 60
     let endHour   = endMinutes / 60
     let endMin    = endMinutes % 60
 
-    guard let startToday = calendar.date(bySettingHour: startHour, minute: startMin, second: 0, of: now),
-          let endToday = calendar.date(bySettingHour: endHour, minute: endMin, second: 0, of: now) else {
-        return false
-    }
+    let startToday = calendar.date(bySettingHour: startHour, minute: startMin, second: 0, of: now) ?? now
+    let endToday   = calendar.date(bySettingHour: endHour, minute: endMin, second: 0, of: now) ?? now
 
-    if startToday == endToday {
-        return false // zero-length window
-    }
-    
+    if startToday == endToday { return false }
     if startToday < endToday {
-        // Same-day window
         return now >= startToday && now < endToday
     } else {
-        // Overnight window (e.g., 21:00 -> 07:00)
         return now >= startToday || now < endToday
     }
 }
+

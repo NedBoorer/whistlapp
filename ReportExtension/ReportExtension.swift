@@ -12,10 +12,26 @@ import SwiftUI
 @main
 struct ReportExtension: DeviceActivityReportExtension {
     var body: some DeviceActivityReportScene {
-        // Create a report for each DeviceActivityReport.Context that your app supports.
-        TotalActivityReport { totalActivity in
-            TotalActivityView(totalActivity: totalActivity)
+        // Home summary
+        HomeReport { model in
+            HomeReportView(model: model)
         }
-        // Add more reports here...
+        // Top apps
+        TopAppsReport { model in
+            TopThreeView(model: model)
+        }
+        // Total activity details
+        TotalActivityReport { model in
+            TotalActivityView(model: model)
+        }
+        // Widget-like compact summary
+        WidgetReport { model in
+            WidgetReportView(model: model)
+        }
+        // Pickups and notifications insights
+        TotalPickupsReport { model in
+            PickupsChartView(model: model)
+        }
     }
 }
+

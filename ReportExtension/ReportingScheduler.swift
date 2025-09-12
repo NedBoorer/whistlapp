@@ -9,6 +9,17 @@ import Foundation
 import DeviceActivity
 import FamilyControls
 
+// Define the monitoring identifiers for the app target using DeviceActivityName.
+// The report extension separately defines matching identifiers on DeviceActivityReport.Context.
+extension DeviceActivityName {
+    static let home = Self("Home")
+    static let totalActivity = Self("Total Activity")
+    static let widget = Self("Widget")
+    static let moreInsights = Self("More Insights")
+    static let topApps = Self("Top Apps")
+    static let totalPickups = Self("Total Pickups")
+}
+
 /// Central place to keep DeviceActivityCenter monitoring in sync with SharedConfig.
 /// FocusScheduleViewModel already calls refreshMonitoringFromShared() on changes.
 final class ReportingScheduler {
@@ -35,40 +46,42 @@ final class ReportingScheduler {
             let start = SharedConfigStore.loadStartMinutes()
             let end = SharedConfigStore.loadEndMinutes()
 
-            // Build filter
-            let filter = DeviceActivityFilter(
-                segment: .daily(
-                    during: scheduleRangeForToday(startMinutes: start, endMinutes: end)
-                ),
-                categories: selection.categoryTokens.isEmpty ? nil : selection.categoryTokens,
-                applications: selection.applicationTokens.isEmpty ? nil : selection.applicationTokens
-            )
+            // Create a DeviceActivitySchedule for the schedule range
+            let schedule: DeviceActivitySchedule
+            if isScheduleEnabled {
+                let interval = scheduleRangeForToday(startMinutes: start, endMinutes: end)
+                let startComponents = calendar.dateComponents([.hour, .minute], from: interval.start)
+                let endComponents = calendar.dateComponents([.hour, .minute], from: interval.end)
+                
+                schedule = DeviceActivitySchedule(
+                    intervalStart: startComponents,
+                    intervalEnd: endComponents,
+                    repeats: true
+                )
+            } else {
+                // If schedule disabled, monitor "today all day" so reports can still render
+                schedule = DeviceActivitySchedule(
+                    intervalStart: DateComponents(hour: 0, minute: 0),
+                    intervalEnd: DateComponents(hour: 23, minute: 59),
+                    repeats: true
+                )
+            }
 
-            // If schedule disabled, monitor "today all day" so reports can still render
-            let fallbackFilter = DeviceActivityFilter(
-                segment: .daily(during: DateInterval(start: startOfDay(Date()), end: endOfDay(Date()))),
-                categories: selection.categoryTokens.isEmpty ? nil : selection.categoryTokens,
-                applications: selection.applicationTokens.isEmpty ? nil : selection.applicationTokens
-            )
-
-            // Start monitoring for all contexts we support.
-            // You can choose a subset if you want different windows, but here we keep them aligned.
-            let contexts: [DeviceActivityReport.Context] = [
+            // Keep identifiers aligned with those used in the report extension.
+            let names: [DeviceActivityName] = [
                 .home, .totalActivity, .widget, .moreInsights, .topApps, .totalPickups
             ]
 
-            // Stop existing and restart with fresh filters
+            // Stop existing and restart with fresh schedule
             stopAllMonitoring()
 
-            for ctx in contexts {
+            for name in names {
                 do {
-                    try await center.startMonitoring(
-                        ctx,
-                        during: isScheduleEnabled ? filter : fallbackFilter
-                    )
+                    try await center.startMonitoring(name, during: schedule)
                 } catch {
                     // Non-fatal; continue with others
                     // You could log this error if needed
+                    print("Failed to start monitoring for \(name): \(error)")
                 }
             }
         }
@@ -76,12 +89,17 @@ final class ReportingScheduler {
 
     func stopAllMonitoring() {
         Task {
-            let contexts: [DeviceActivityReport.Context] = [
+            let names: [DeviceActivityName] = [
                 .home, .totalActivity, .widget, .moreInsights, .topApps, .totalPickups
             ]
-            for ctx in contexts {
-                await center.stopMonitoring(ctx)
-            }
+            
+            // Option 1: Stop all at once
+            await center.stopMonitoring(names)
+            
+            // Option 2: Stop each individually (alternative approach)
+            // for name in names {
+            //     await center.stopMonitoring([name])
+            // }
         }
     }
 
@@ -96,7 +114,7 @@ final class ReportingScheduler {
         if startDate < endDate {
             return DateInterval(start: startDate, end: endDate)
         } else {
-            // Crosses midnight: split; for reporting we’ll use a single interval that ends tomorrow at end time
+            // Crosses midnight: for reporting use a single interval that ends tomorrow at end time
             let endTomorrow = date(on: calendar.date(byAdding: .day, value: 1, to: now) ?? now, minutes: endMinutes)
             return DateInterval(start: startDate, end: endTomorrow)
         }
@@ -122,4 +140,3 @@ final class ReportingScheduler {
         return calendar.date(byAdding: DateComponents(day: 1, second: -1), to: start) ?? date
     }
 }
-

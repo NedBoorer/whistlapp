@@ -6,11 +6,16 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct BrandPalette {
     // Dynamic brand colors for light/dark
     let accent = Color("BrandAccent", bundle: .main, default: Color(red: 0.12, green: 0.49, blue: 0.98))
     let accentSecondary = Color("BrandAccentSecondary", bundle: .main, default: Color(red: 0.10, green: 0.43, blue: 0.90))
+
+    // Mission tones
+    let attention = Color("BrandAttention", bundle: .main, default: Color(red: 1.00, green: 0.73, blue: 0.20))  // warm amber for banners
+    let success   = Color("BrandSuccess", bundle: .main, default: Color(red: 0.18, green: 0.67, blue: 0.36))  // supportive green
 
     let bgTop = Color("BrandBackgroundTop", bundle: .main, default: Color(.systemBackground)).opacity(0.98)
     let bgBottom = Color("BrandBackgroundBottom", bundle: .main, default: Color(.secondarySystemBackground))
@@ -50,6 +55,33 @@ struct BrandPalette {
             endPoint: .bottomTrailing
         )
     }
+
+    // Compact mission banner view you can drop into screens
+    @ViewBuilder
+    func missionBanner(_ text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Image(systemName: "person.2.fill")
+                .foregroundStyle(attention)
+            Text(text)
+                .font(.footnote)
+                .foregroundStyle(.primary)
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(fieldBackground)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(cardStroke, lineWidth: 1)
+        )
+    }
+
+    // UIColor bridges for the Managed Settings extension if you ever want brand colors there
+    var uiAccent: UIColor { UIColor(accent) }
+    var uiSecondaryText: UIColor { UIColor.secondaryLabel }
+    var uiPrimaryText: UIColor { UIColor.label }
 }
 
 extension Color {
@@ -62,3 +94,4 @@ extension Color {
         }
     }
 }
+

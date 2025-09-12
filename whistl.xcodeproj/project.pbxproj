@@ -20,6 +20,23 @@
 		88F430CF2E728C5800596C4E /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 88F430CE2E728C5800596C4E /* FirebaseAuth */; };
 		88F430D12E728C6A00596C4E /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 88F430D02E728C6A00596C4E /* FirebaseCore */; };
 		88F430D32E728C7400596C4E /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 88F430D22E728C7400596C4E /* FirebaseFirestore */; };
+		88F430E82E7297D500596C4E /* ManagedSettings.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 88A771382E72886E0024A9D5 /* ManagedSettings.framework */; };
+		88F430EA2E7297D500596C4E /* ManagedSettingsUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 88F430E92E7297D500596C4E /* ManagedSettingsUI.framework */; };
+		88F430F22E7297D500596C4E /* shieldwhistlconfig.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 88F430E72E7297D400596C4E /* shieldwhistlconfig.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		88F431992E7388BC00596C4E /* ReportExtension.appex in Embed ExtensionKit Extensions */ = {isa = PBXBuildFile; fileRef = 88F4318D2E7388BC00596C4E /* ReportExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		88F4322F2E738D1400596C4E /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 88F4322E2E738D1400596C4E /* FirebaseAuth */; };
+		88F432312E738D1C00596C4E /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 88F432302E738D1C00596C4E /* FirebaseFirestore */; };
+		88F432332E738D2300596C4E /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 88F432322E738D2300596C4E /* FirebaseCore */; };
+		88F432352E738ED700596C4E /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 88F432342E738ED700596C4E /* FirebaseCore */; };
+		88F432372E738EDB00596C4E /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 88F432362E738EDB00596C4E /* FirebaseAuth */; };
+		88F432392E738EE100596C4E /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 88F432382E738EE100596C4E /* FirebaseFirestore */; };
+		88F4323B2E738EEC00596C4E /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 88F4323A2E738EEC00596C4E /* FirebaseCore */; };
+		88F4323C2E738F1F00596C4E /* Brand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 881A3C9F2E6FCC9000CE1BD2 /* Brand.swift */; };
+		88F4323D2E738F1F00596C4E /* Brand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 881A3C9F2E6FCC9000CE1BD2 /* Brand.swift */; };
+		88F4323E2E738F2500596C4E /* SharedSetupFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 881A3CA72E6FE49D00CE1BD2 /* SharedSetupFlow.swift */; };
+		88F4323F2E738F2500596C4E /* SharedSetupFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 881A3CA72E6FE49D00CE1BD2 /* SharedSetupFlow.swift */; };
+		88F432402E738F2B00596C4E /* WhisprHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 881A3CBF2E70185000CE1BD2 /* WhisprHomeView.swift */; };
+		88F432412E738F2B00596C4E /* WhisprHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 881A3CBF2E70185000CE1BD2 /* WhisprHomeView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -30,6 +47,20 @@
 			remoteGlobalIDString = 88A771352E72886D0024A9D5;
 			remoteInfo = shieldwhistl;
 		};
+		88F430F02E7297D500596C4E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 88702F9F2E6EB154003D5061 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 88F430E62E7297D400596C4E;
+			remoteInfo = shieldwhistlconfig;
+		};
+		88F431972E7388BC00596C4E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 88702F9F2E6EB154003D5061 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 88F4318C2E7388BC00596C4E;
+			remoteInfo = ReportExtension;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -39,9 +70,21 @@
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
+				88F430F22E7297D500596C4E /* shieldwhistlconfig.appex in Embed Foundation Extensions */,
 				88A771412E72886E0024A9D5 /* shieldwhistl.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		88F431842E73888D00596C4E /* Embed ExtensionKit Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(EXTENSIONS_FOLDER_PATH)";
+			dstSubfolderSpec = 16;
+			files = (
+				88F431992E7388BC00596C4E /* ReportExtension.appex in Embed ExtensionKit Extensions */,
+			);
+			name = "Embed ExtensionKit Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
@@ -53,6 +96,9 @@
 		88702FA72E6EB154003D5061 /* whistl.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = whistl.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		88A771362E72886D0024A9D5 /* shieldwhistl.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = shieldwhistl.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		88A771382E72886E0024A9D5 /* ManagedSettings.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ManagedSettings.framework; path = System/Library/Frameworks/ManagedSettings.framework; sourceTree = SDKROOT; };
+		88F430E72E7297D400596C4E /* shieldwhistlconfig.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = shieldwhistlconfig.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		88F430E92E7297D500596C4E /* ManagedSettingsUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ManagedSettingsUI.framework; path = System/Library/Frameworks/ManagedSettingsUI.framework; sourceTree = SDKROOT; };
+		88F4318D2E7388BC00596C4E /* ReportExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.extensionkit-extension"; includeInIndex = 0; path = ReportExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -72,8 +118,10 @@
 				ContentView.swift,
 				FocusMenuView.swift,
 				FocusScheduleViewModel.swift,
+				NotificationHelper.swift,
 				PairingViews.swift,
 				ProfileView.swift,
+				ReportHostView.swift,
 				SharedConfig.swift,
 				SignUpView.swift,
 				WelcomeView.swift,
@@ -85,8 +133,138 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				ShieldActionExtension.swift,
+				ShieldDataSource.swift,
 			);
 			target = 88702FA62E6EB154003D5061 /* whistl */;
+		};
+		88F430F62E7297D500596C4E /* Exceptions for "shieldwhistlconfig" folder in "shieldwhistlconfig" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 88F430E62E7297D400596C4E /* shieldwhistlconfig */;
+		};
+		88F430F92E729A5A00596C4E /* Exceptions for "shieldwhistlconfig" folder in "whistl" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				ShieldConfigurationExtension.swift,
+			);
+			target = 88702FA62E6EB154003D5061 /* whistl */;
+		};
+		88F430FA2E729A5A00596C4E /* Exceptions for "shieldwhistlconfig" folder in "shieldwhistl" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				ShieldConfigurationExtension.swift,
+			);
+			target = 88A771352E72886D0024A9D5 /* shieldwhistl */;
+		};
+		88F4319D2E7388BC00596C4E /* Exceptions for "ReportExtension" folder in "ReportExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 88F4318C2E7388BC00596C4E /* ReportExtension */;
+		};
+		88F431A02E7389B700596C4E /* Exceptions for "whistl" folder in "shieldwhistlconfig" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				AppController.swift,
+				AppDelegate.swift,
+				Authview.swift,
+				ContentView.swift,
+				FocusMenuView.swift,
+				FocusScheduleViewModel.swift,
+				NotificationHelper.swift,
+				PairingViews.swift,
+				ProfileView.swift,
+				ReportHostView.swift,
+				SharedConfig.swift,
+				SignUpView.swift,
+				WelcomeView.swift,
+				whistlApp.swift,
+			);
+			target = 88F430E62E7297D400596C4E /* shieldwhistlconfig */;
+		};
+		88F431A12E7389B700596C4E /* Exceptions for "whistl" folder in "ReportExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				AppController.swift,
+				AppDelegate.swift,
+				Authview.swift,
+				ContentView.swift,
+				FocusMenuView.swift,
+				FocusScheduleViewModel.swift,
+				NotificationHelper.swift,
+				PairingViews.swift,
+				ProfileView.swift,
+				ReportHostView.swift,
+				SharedConfig.swift,
+				SignUpView.swift,
+				WelcomeView.swift,
+			);
+			target = 88F4318C2E7388BC00596C4E /* ReportExtension */;
+		};
+		88F431F62E738B6900596C4E /* Exceptions for "ReportExtension" folder in "whistl" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				HomeReportView.swift,
+				PickupsChartView.swift,
+				ReportingScheduler.swift,
+				TopThreeView.swift,
+				TotalActivityReport.swift,
+				TotalActivityView.swift,
+				WidgetReportView.swift,
+			);
+			target = 88702FA62E6EB154003D5061 /* whistl */;
+		};
+		88F431F72E738B6900596C4E /* Exceptions for "ReportExtension" folder in "shieldwhistl" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				HomeReportView.swift,
+				PickupsChartView.swift,
+				ReportingScheduler.swift,
+				TopThreeView.swift,
+				TotalActivityReport.swift,
+				TotalActivityView.swift,
+				WidgetReportView.swift,
+			);
+			target = 88A771352E72886D0024A9D5 /* shieldwhistl */;
+		};
+		88F431F82E738B6900596C4E /* Exceptions for "ReportExtension" folder in "shieldwhistlconfig" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				HomeReportView.swift,
+				PickupsChartView.swift,
+				ReportingScheduler.swift,
+				TopThreeView.swift,
+				TotalActivityReport.swift,
+				TotalActivityView.swift,
+				WidgetReportView.swift,
+			);
+			target = 88F430E62E7297D400596C4E /* shieldwhistlconfig */;
+		};
+		88F4320F2E738C7200596C4E /* Exceptions for "shieldwhistlconfig" folder in "ReportExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				ShieldConfigurationExtension.swift,
+			);
+			target = 88F4318C2E7388BC00596C4E /* ReportExtension */;
+		};
+		88F432122E738C7A00596C4E /* Exceptions for "shieldwhistl" folder in "shieldwhistlconfig" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				ShieldActionExtension.swift,
+				ShieldDataSource.swift,
+			);
+			target = 88F430E62E7297D400596C4E /* shieldwhistlconfig */;
+		};
+		88F432132E738C7A00596C4E /* Exceptions for "shieldwhistl" folder in "ReportExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				ShieldActionExtension.swift,
+				ShieldDataSource.swift,
+			);
+			target = 88F4318C2E7388BC00596C4E /* ReportExtension */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -95,6 +273,8 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				88F430BE2E728B1700596C4E /* Exceptions for "whistl" folder in "shieldwhistl" target */,
+				88F431A02E7389B700596C4E /* Exceptions for "whistl" folder in "shieldwhistlconfig" target */,
+				88F431A12E7389B700596C4E /* Exceptions for "whistl" folder in "ReportExtension" target */,
 			);
 			path = whistl;
 			sourceTree = "<group>";
@@ -104,8 +284,32 @@
 			exceptions = (
 				88F430CA2E728BCB00596C4E /* Exceptions for "shieldwhistl" folder in "whistl" target */,
 				88A771422E72886E0024A9D5 /* Exceptions for "shieldwhistl" folder in "shieldwhistl" target */,
+				88F432122E738C7A00596C4E /* Exceptions for "shieldwhistl" folder in "shieldwhistlconfig" target */,
+				88F432132E738C7A00596C4E /* Exceptions for "shieldwhistl" folder in "ReportExtension" target */,
 			);
 			path = shieldwhistl;
+			sourceTree = "<group>";
+		};
+		88F430EB2E7297D500596C4E /* shieldwhistlconfig */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				88F430F92E729A5A00596C4E /* Exceptions for "shieldwhistlconfig" folder in "whistl" target */,
+				88F430FA2E729A5A00596C4E /* Exceptions for "shieldwhistlconfig" folder in "shieldwhistl" target */,
+				88F430F62E7297D500596C4E /* Exceptions for "shieldwhistlconfig" folder in "shieldwhistlconfig" target */,
+				88F4320F2E738C7200596C4E /* Exceptions for "shieldwhistlconfig" folder in "ReportExtension" target */,
+			);
+			path = shieldwhistlconfig;
+			sourceTree = "<group>";
+		};
+		88F4318E2E7388BC00596C4E /* ReportExtension */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				88F431F62E738B6900596C4E /* Exceptions for "ReportExtension" folder in "whistl" target */,
+				88F431F72E738B6900596C4E /* Exceptions for "ReportExtension" folder in "shieldwhistl" target */,
+				88F431F82E738B6900596C4E /* Exceptions for "ReportExtension" folder in "shieldwhistlconfig" target */,
+				88F4319D2E7388BC00596C4E /* Exceptions for "ReportExtension" folder in "ReportExtension" target */,
+			);
+			path = ReportExtension;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -116,6 +320,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				88702FB92E6EB3A3003D5061 /* FirebaseAuth in Frameworks */,
+				88F4323B2E738EEC00596C4E /* FirebaseCore in Frameworks */,
 				881A3C9E2E6FC86900CE1BD2 /* FirebaseFirestore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -131,6 +336,28 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		88F430E42E7297D400596C4E /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				88F430E82E7297D500596C4E /* ManagedSettings.framework in Frameworks */,
+				88F432352E738ED700596C4E /* FirebaseCore in Frameworks */,
+				88F430EA2E7297D500596C4E /* ManagedSettingsUI.framework in Frameworks */,
+				88F432392E738EE100596C4E /* FirebaseFirestore in Frameworks */,
+				88F432372E738EDB00596C4E /* FirebaseAuth in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		88F4318A2E7388BC00596C4E /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				88F4322F2E738D1400596C4E /* FirebaseAuth in Frameworks */,
+				88F432332E738D2300596C4E /* FirebaseCore in Frameworks */,
+				88F432312E738D1C00596C4E /* FirebaseFirestore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -139,6 +366,8 @@
 			children = (
 				88702FA92E6EB154003D5061 /* whistl */,
 				88A7713A2E72886E0024A9D5 /* shieldwhistl */,
+				88F430EB2E7297D500596C4E /* shieldwhistlconfig */,
+				88F4318E2E7388BC00596C4E /* ReportExtension */,
 				88A771372E72886E0024A9D5 /* Frameworks */,
 				88702FA82E6EB154003D5061 /* Products */,
 				881A3C9F2E6FCC9000CE1BD2 /* Brand.swift */,
@@ -152,6 +381,8 @@
 			children = (
 				88702FA72E6EB154003D5061 /* whistl.app */,
 				88A771362E72886D0024A9D5 /* shieldwhistl.appex */,
+				88F430E72E7297D400596C4E /* shieldwhistlconfig.appex */,
+				88F4318D2E7388BC00596C4E /* ReportExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -160,6 +391,7 @@
 			isa = PBXGroup;
 			children = (
 				88A771382E72886E0024A9D5 /* ManagedSettings.framework */,
+				88F430E92E7297D500596C4E /* ManagedSettingsUI.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -175,11 +407,14 @@
 				88702FA42E6EB154003D5061 /* Frameworks */,
 				88702FA52E6EB154003D5061 /* Resources */,
 				88A771462E72886E0024A9D5 /* Embed Foundation Extensions */,
+				88F431842E73888D00596C4E /* Embed ExtensionKit Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				88A771402E72886E0024A9D5 /* PBXTargetDependency */,
+				88F430F12E7297D500596C4E /* PBXTargetDependency */,
+				88F431982E7388BC00596C4E /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				88702FA92E6EB154003D5061 /* whistl */,
@@ -188,6 +423,7 @@
 			packageProductDependencies = (
 				88702FB82E6EB3A3003D5061 /* FirebaseAuth */,
 				881A3C9D2E6FC86900CE1BD2 /* FirebaseFirestore */,
+				88F4323A2E738EEC00596C4E /* FirebaseCore */,
 			);
 			productName = whistl;
 			productReference = 88702FA72E6EB154003D5061 /* whistl.app */;
@@ -218,6 +454,56 @@
 			productReference = 88A771362E72886D0024A9D5 /* shieldwhistl.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		88F430E62E7297D400596C4E /* shieldwhistlconfig */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 88F430F32E7297D500596C4E /* Build configuration list for PBXNativeTarget "shieldwhistlconfig" */;
+			buildPhases = (
+				88F430E32E7297D400596C4E /* Sources */,
+				88F430E42E7297D400596C4E /* Frameworks */,
+				88F430E52E7297D400596C4E /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				88F430EB2E7297D500596C4E /* shieldwhistlconfig */,
+			);
+			name = shieldwhistlconfig;
+			packageProductDependencies = (
+				88F432342E738ED700596C4E /* FirebaseCore */,
+				88F432362E738EDB00596C4E /* FirebaseAuth */,
+				88F432382E738EE100596C4E /* FirebaseFirestore */,
+			);
+			productName = shieldwhistlconfig;
+			productReference = 88F430E72E7297D400596C4E /* shieldwhistlconfig.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		88F4318C2E7388BC00596C4E /* ReportExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 88F4319A2E7388BC00596C4E /* Build configuration list for PBXNativeTarget "ReportExtension" */;
+			buildPhases = (
+				88F431892E7388BC00596C4E /* Sources */,
+				88F4318A2E7388BC00596C4E /* Frameworks */,
+				88F4318B2E7388BC00596C4E /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				88F4318E2E7388BC00596C4E /* ReportExtension */,
+			);
+			name = ReportExtension;
+			packageProductDependencies = (
+				88F4322E2E738D1400596C4E /* FirebaseAuth */,
+				88F432302E738D1C00596C4E /* FirebaseFirestore */,
+				88F432322E738D2300596C4E /* FirebaseCore */,
+			);
+			productName = ReportExtension;
+			productReference = 88F4318D2E7388BC00596C4E /* ReportExtension.appex */;
+			productType = "com.apple.product-type.extensionkit-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -232,6 +518,12 @@
 						CreatedOnToolsVersion = 16.4;
 					};
 					88A771352E72886D0024A9D5 = {
+						CreatedOnToolsVersion = 26.0;
+					};
+					88F430E62E7297D400596C4E = {
+						CreatedOnToolsVersion = 26.0;
+					};
+					88F4318C2E7388BC00596C4E = {
 						CreatedOnToolsVersion = 26.0;
 					};
 				};
@@ -255,6 +547,8 @@
 			targets = (
 				88702FA62E6EB154003D5061 /* whistl */,
 				88A771352E72886D0024A9D5 /* shieldwhistl */,
+				88F430E62E7297D400596C4E /* shieldwhistlconfig */,
+				88F4318C2E7388BC00596C4E /* ReportExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -268,6 +562,20 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		88A771342E72886D0024A9D5 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		88F430E52E7297D400596C4E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		88F4318B2E7388BC00596C4E /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -297,6 +605,26 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		88F430E32E7297D400596C4E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				88F4323E2E738F2500596C4E /* SharedSetupFlow.swift in Sources */,
+				88F432402E738F2B00596C4E /* WhisprHomeView.swift in Sources */,
+				88F4323C2E738F1F00596C4E /* Brand.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		88F431892E7388BC00596C4E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				88F4323F2E738F2500596C4E /* SharedSetupFlow.swift in Sources */,
+				88F432412E738F2B00596C4E /* WhisprHomeView.swift in Sources */,
+				88F4323D2E738F1F00596C4E /* Brand.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -304,6 +632,16 @@
 			isa = PBXTargetDependency;
 			target = 88A771352E72886D0024A9D5 /* shieldwhistl */;
 			targetProxy = 88A7713F2E72886E0024A9D5 /* PBXContainerItemProxy */;
+		};
+		88F430F12E7297D500596C4E /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 88F430E62E7297D400596C4E /* shieldwhistlconfig */;
+			targetProxy = 88F430F02E7297D500596C4E /* PBXContainerItemProxy */;
+		};
+		88F431982E7388BC00596C4E /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 88F4318C2E7388BC00596C4E /* ReportExtension */;
+			targetProxy = 88F431972E7388BC00596C4E /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -442,6 +780,8 @@
 				DEVELOPMENT_TEAM = 46Z27T627W;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Whistl;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -472,6 +812,8 @@
 				DEVELOPMENT_TEAM = 46Z27T627W;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = Whistl;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -551,6 +893,126 @@
 			};
 			name = Release;
 		};
+		88F430F42E7297D500596C4E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = shieldwhistlconfig/shieldwhistlconfig.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 46Z27T627W;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = shieldwhistlconfig/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = shieldwhistlconfig;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.whistl.whistl.shieldwhistlconfig;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		88F430F52E7297D500596C4E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = shieldwhistlconfig/shieldwhistlconfig.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 46Z27T627W;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = shieldwhistlconfig/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = shieldwhistlconfig;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.whistl.whistl.shieldwhistlconfig;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		88F4319B2E7388BC00596C4E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ReportExtension/ReportExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 46Z27T627W;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ReportExtension/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = ReportExtension;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.whistl.whistl.ReportExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		88F4319C2E7388BC00596C4E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = ReportExtension/ReportExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 46Z27T627W;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ReportExtension/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = ReportExtension;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.whistl.whistl.ReportExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -577,6 +1039,24 @@
 			buildConfigurations = (
 				88A771442E72886E0024A9D5 /* Debug */,
 				88A771452E72886E0024A9D5 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		88F430F32E7297D500596C4E /* Build configuration list for PBXNativeTarget "shieldwhistlconfig" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				88F430F42E7297D500596C4E /* Debug */,
+				88F430F52E7297D500596C4E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		88F4319A2E7388BC00596C4E /* Build configuration list for PBXNativeTarget "ReportExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				88F4319B2E7388BC00596C4E /* Debug */,
+				88F4319C2E7388BC00596C4E /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -619,6 +1099,41 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 88702FB72E6EB3A3003D5061 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseFirestore;
+		};
+		88F4322E2E738D1400596C4E /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 88702FB72E6EB3A3003D5061 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		88F432302E738D1C00596C4E /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 88702FB72E6EB3A3003D5061 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
+		88F432322E738D2300596C4E /* FirebaseCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 88702FB72E6EB3A3003D5061 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCore;
+		};
+		88F432342E738ED700596C4E /* FirebaseCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 88702FB72E6EB3A3003D5061 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCore;
+		};
+		88F432362E738EDB00596C4E /* FirebaseAuth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 88702FB72E6EB3A3003D5061 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseAuth;
+		};
+		88F432382E738EE100596C4E /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 88702FB72E6EB3A3003D5061 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
+		88F4323A2E738EEC00596C4E /* FirebaseCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 88702FB72E6EB3A3003D5061 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCore;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

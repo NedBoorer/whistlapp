@@ -18,11 +18,11 @@ struct PickupsChartView: View {
 
             if !model.pickupsByApp.isEmpty {
                 Section("Pickups by app") {
-                    ForEach(model.pickupsByApp.prefix(10), id: \.0) { row in
+                    ForEach(model.pickupsByApp.prefix(10), id: \.name) { row in
                         HStack {
-                            Text(row.0)
+                            Text(row.name)
                             Spacer()
-                            Text("\(Int(row.1))")
+                            Text("\(Int(row.value))")
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -31,11 +31,11 @@ struct PickupsChartView: View {
 
             if !model.notificationsByApp.isEmpty {
                 Section("Notifications by app") {
-                    ForEach(model.notificationsByApp.prefix(10), id: \.0) { row in
+                    ForEach(model.notificationsByApp.prefix(10), id: \.name) { row in
                         HStack {
-                            Text(row.0)
+                            Text(row.name)
                             Spacer()
-                            Text("\(Int(row.1))")
+                            Text("\(Int(row.value))")
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -48,8 +48,7 @@ struct PickupsChartView: View {
 #Preview {
     PickupsChartView(model: MoreInsightsReport(
         totalPickups: 14,
-        pickupsByApp: [("Messages", 6), ("Mail", 3), ("Safari", 2)],
-        notificationsByApp: [("Messages", 10), ("Mail", 4)]
+        pickupsByApp: [NamedCount(name: "Messages", value: 6), NamedCount(name: "Mail", value: 3), NamedCount(name: "Safari", value: 2)],
+        notificationsByApp: [NamedCount(name: "Messages", value: 10), NamedCount(name: "Mail", value: 4)]
     ))
 }
-

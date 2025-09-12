@@ -26,6 +26,9 @@ struct whistlApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .task {
+                    WhistlNotifier.requestAuthorizationIfNeeded()
+                }
                 .environment(appController) // inject controller once
                 // No need to call listenToAuthChanges here anymore
         }
