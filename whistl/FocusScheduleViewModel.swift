@@ -121,7 +121,8 @@ final class FocusScheduleViewModel {
     private let db = Firestore.firestore()
 
     // Shared storage keys for weekly plan
-    private let weeklyPlanKey = "fc_weeklyPlan_v1"
+    private static let weeklyPlanKey = "fc_weeklyPlan_v1"
+    private let weeklyPlanKey = FocusScheduleViewModel.weeklyPlanKey
 
     init() {
         loadFromShared()
@@ -203,7 +204,6 @@ final class FocusScheduleViewModel {
                 }
                 let status = (data["status"] as? String) ?? "pending"
                 self.isMyBreakRequestPending = (status == "pending")
-                // If partner approved and pauseUntil has been written by partner policy listener, no action here.
             }
         }
 
@@ -359,12 +359,10 @@ final class FocusScheduleViewModel {
 
     // MARK: - Break control (partner-granted + request/approve)
 
-    // Local device cannot grant its own break.
     func startFiveMinuteBreak(now: Date = Date()) {
         // Intentionally no-op to enforce partner-only grants.
     }
 
-    // Owner may cancel an active break on their device (policy choice).
     func cancelBreak() {
         pauseUntil = nil
         isPaused = false
@@ -378,16 +376,13 @@ final class FocusScheduleViewModel {
                 self?.evaluateAndApplyShield()
             }
         }
-        // Clear pause in Firestore so partner sees it end early
         Task { await writePauseUntil(nil, forOwner: myUID) }
     }
 
-    // Partner grants a break to the other device.
     func grantFiveMinuteBreakToPartner(now: Date = Date()) async {
         guard let _ = pairId, let target = partnerUID else { return }
         let until = now.addingTimeInterval(5 * 60)
         await writePauseUntil(until, forOwner: target)
-        // Also mark the request approved if one exists
         await approvePartnerBreakRequest()
     }
 
@@ -411,7 +406,6 @@ final class FocusScheduleViewModel {
         }
     }
 
-    // Owner requests a 5-minute break (creates/updates a pending request)
     func requestBreak() async {
         guard let pid = pairId, let owner = myUID, !pid.isEmpty, !owner.isEmpty else { return }
         let ref = db.collection("pairSpaces").document(pid).collection("breakRequests").document(owner)
@@ -432,7 +426,6 @@ final class FocusScheduleViewModel {
         }
     }
 
-    // Owner cancels their pending request
     func cancelBreakRequest() async {
         guard let pid = pairId, let owner = myUID, !pid.isEmpty, !owner.isEmpty else { return }
         let ref = db.collection("pairSpaces").document(pid).collection("breakRequests").document(owner)
@@ -449,7 +442,6 @@ final class FocusScheduleViewModel {
         }
     }
 
-    // Partner approves the incoming request (and grants pause)
     func approvePartnerBreakRequest() async {
         guard let pid = pairId, let target = partnerUID, !pid.isEmpty, !target.isEmpty else { return }
         let reqRef = db.collection("pairSpaces").document(pid).collection("breakRequests").document(target)
@@ -464,7 +456,6 @@ final class FocusScheduleViewModel {
         }
     }
 
-    // Partner rejects the incoming request
     func rejectPartnerBreakRequest() async {
         guard let pid = pairId, let target = partnerUID, !pid.isEmpty, !target.isEmpty else { return }
         let reqRef = db.collection("pairSpaces").document(pid).collection("breakRequests").document(target)
@@ -630,6 +621,24 @@ final class FocusScheduleViewModel {
         }
     }
 
+    // Allow other parts (setup flow) to persist a plan into shared storage
+    static func persistWeeklyPlanForShared(_ plan: WeeklyBlockPlan) {
+        do {
+            let data = try JSONEncoder().encode(plan)
+            SharedConfigStore.defaults.set(data, forKey: weeklyPlanKey)
+        } catch { }
+        // Store a legacy summary for today or any day to keep ReportingScheduler happy
+        let cal = Calendar.current
+        let today = Weekday.today(calendar: cal)
+        if let day = plan.days.first(where: { $0.weekday == today && $0.enabled }) ?? plan.days.first(where: { $0.enabled }),
+           let first = day.ranges.first {
+            SharedConfigStore.save(startMinutes: first.startMinutes, endMinutes: first.endMinutes)
+        }
+        SharedConfigStore.save(isScheduleEnabled: true)
+        postConfigDidChangeDarwinNotification()
+        ReportingScheduler.shared.refreshMonitoringFromShared()
+    }
+
     private func loadWeeklyPlan() -> WeeklyBlockPlan? {
         guard let data = SharedConfigStore.defaults.data(forKey: weeklyPlanKey) else { return nil }
         return try? JSONDecoder().decode(WeeklyBlockPlan.self, from: data)
@@ -679,4 +688,3 @@ final class FocusScheduleViewModel {
         postConfigDidChangeDarwinNotification()
     }
 }
-

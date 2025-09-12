@@ -7,10 +7,11 @@ import ManagedSettings
 // MARK: - Firestore models
 
 struct SetupStepID {
-    static let blockSchedule = "blockSchedule"
-    static let appSelection  = "appSelection"
+    static let appSelection  = "appSelection"   // Step 1
+    static let weeklySchedule = "weeklySchedule" // Step 2 (per-day ranges)
 }
 
+// Per-day time range for schedule persistence when needed locally
 struct BlockSchedule: Codable, Equatable {
     var startMinutes: Int // minutes since midnight
     var endMinutes: Int
@@ -36,7 +37,7 @@ private struct SetupDoc: Codable {
     var updatedAt: Timestamp?
     var completedAt: Timestamp?
 
-    init(step: String = SetupStepID.blockSchedule,
+    init(step: String = SetupStepID.appSelection,
          stepIndex: Int = 0,
          answers: [String: [String: AnyCodable]] = [:],
          approvals: [String: Bool] = [:],
@@ -101,11 +102,12 @@ struct SharedSetupFlowView: View {
     @State private var isSaving = false
     @State private var errorMessage: String?
 
-    // local draft for A or B before submission (times)
-    @State private var myDraftBlock: BlockSchedule = BlockSchedule(startMinutes: 21*60, endMinutes: 7*60)
-
-    // local draft for app selection
+    // Step 1: App selection draft
     @State private var myAppSelection: FamilyActivitySelection = FamilyActivitySelection()
+    @State private var showingPicker = false
+
+    // Step 2: Weekly schedule draft
+    @State private var myWeeklyPlan: WeeklyBlockPlan = .replicated(startMinutes: 21*60, endMinutes: 7*60)
 
     // Navigation to home when flow completes
     @State private var navigateToHome = false
@@ -114,26 +116,26 @@ struct SharedSetupFlowView: View {
     private var pairId: String? { appController.pairId }
     private var uid: String? { Auth.auth().currentUser?.uid }
 
+    // Total steps: 2 (Selection, Weekly schedule)
+    private let totalSteps = 2
+
     var body: some View {
         ZStack {
             brand.background()
 
             VStack(spacing: 20) {
-                // Top header with gradient and progress
                 HeaderWithProgress(
                     title: "Set up your blocker together",
-                    subtitle: "Only one phone is active at a time. Submit, your mate approves, then swap.",
+                    subtitle: "Only one phone is active at a time. First choose apps, then set time windows.",
                     stepIndex: setup.stepIndex,
-                    totalSteps: 2,
+                    totalSteps: totalSteps,
                     brand: brand
                 )
 
-                // Info slides / small carousel
                 InfoCarousel(brand: brand)
 
-                // Debug/status banner to verify role/phase on each device
                 HStack(spacing: 8) {
-                    Text("Role: \(currentRole) • Phase: \(setup.phase)")
+                    Text("Role: \(currentRole) • Step: \(setup.step) • Phase: \(setup.phase)")
                         .font(.caption2)
                         .foregroundStyle(brand.secondaryText)
                     Spacer()
@@ -148,7 +150,6 @@ struct SharedSetupFlowView: View {
                         .transition(.opacity)
                 }
 
-                // Step content OR Waiting screen (enforce "only one phone active at a time")
                 Group {
                     if shouldShowWaitingFullScreen {
                         WaitingFullScreen(
@@ -157,51 +158,58 @@ struct SharedSetupFlowView: View {
                             brand: brand
                         )
                         .transition(.opacity)
+                        .padding(.horizontal, 20)
                     } else {
-                        switch setup.step {
-                        case SetupStepID.blockSchedule:
-                            BlockScheduleStepView(
-                                myAnswer: myBlockAnswer,
-                                partnerAnswer: partnerBlockAnswer,
-                                myApproved: myApproved,
-                                partnerApproved: partnerApproved,
-                                mySubmitted: mySubmitted,
-                                partnerSubmitted: partnerSubmitted,
-                                onDraftChange: { ans in myDraftBlock = ans },
-                                onSubmit: { Task { await submitMyBlockProposal_TX() } },
-                                onApprove: { Task { await approvePartnerProposal_TX() } },
-                                isSaving: isSaving,
-                                brand: brand,
-                                role: currentRole,
-                                phase: currentPhase
-                            )
-                            .transition(.move(edge: .trailing).combined(with: .opacity))
-                        case SetupStepID.appSelection:
-                            AppSelectionStepView(
-                                myApproved: myApproved,
-                                partnerApproved: partnerApproved,
-                                onSubmit: { Task { await submitMyAppSelection_TX() } },
-                                onApprove: { Task { await approvePartnerSelection_TX() } },
-                                isSaving: isSaving,
-                                brand: brand,
-                                role: currentRole,
-                                phase: currentPhase,
-                                selection: $myAppSelection
-                            )
-                            .transition(.move(edge: .trailing).combined(with: .opacity))
-                        default:
-                            VStack(spacing: 8) {
-                                Text("Finalizing setup…")
-                                ProgressView().tint(brand.accent)
+                        // Make the step content scrollable so actions are reachable
+                        ScrollView {
+                            VStack(spacing: 12) {
+                                switch setup.step {
+                                case SetupStepID.appSelection:
+                                    AppSelectionStepView(
+                                        selection: $myAppSelection,
+                                        onOpenPicker: { showingPicker = true },
+                                        onSubmit: { Task { await submitMyAppSelection_TX() } },
+                                        onApprove: { Task { await approvePartnerSelection_TX() } },
+                                        isSaving: isSaving,
+                                        brand: brand,
+                                        role: currentRole,
+                                        phase: currentPhase,
+                                        mySubmitted: mySubmitted,
+                                        partnerSubmitted: partnerSubmitted
+                                    )
+                                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                                    .padding(.horizontal, 20)
+
+                                case SetupStepID.weeklySchedule:
+                                    WeeklyScheduleStepView(
+                                        plan: $myWeeklyPlan,
+                                        onSubmit: { Task { await submitMyWeeklyPlan_TX() } },
+                                        onApprove: { Task { await approvePartnerWeeklyPlan_TX() } },
+                                        isSaving: isSaving,
+                                        brand: brand,
+                                        role: currentRole,
+                                        phase: currentPhase,
+                                        mySubmitted: mySubmitted,
+                                        partnerSubmitted: partnerSubmitted
+                                    )
+                                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                                    .padding(.horizontal, 20)
+
+                                default:
+                                    VStack(spacing: 8) {
+                                        Text("Finalizing setup…")
+                                        ProgressView().tint(brand.accent)
+                                    }
+                                    .padding(.horizontal, 20)
+                                }
+                                Spacer(minLength: 0)
                             }
                         }
                     }
                 }
-                .padding(.horizontal, 20)
 
                 Spacer(minLength: 0)
 
-                // Inline logout as safe exit
                 HStack {
                     Spacer()
                     Button {
@@ -215,7 +223,6 @@ struct SharedSetupFlowView: View {
                 }
                 .padding(.horizontal, 20)
 
-                // Hidden navigation to home after completion
                 NavigationLink(isActive: $navigateToHome) {
                     WhisprHomeView()
                         .navigationBarTitleDisplayMode(.inline)
@@ -238,6 +245,22 @@ struct SharedSetupFlowView: View {
                 .tint(.red)
             }
         }
+        .sheet(isPresented: $showingPicker) {
+            NavigationStack {
+                FamilyActivityPicker(selection: $myAppSelection)
+                    .navigationTitle("Choose activities")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Done") { showingPicker = false }
+                        }
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Cancel") { showingPicker = false }
+                        }
+                    }
+            }
+            .presentationDetents([.large])
+        }
         .task {
             await attachListener()
         }
@@ -245,16 +268,13 @@ struct SharedSetupFlowView: View {
             listener?.remove()
             listener = nil
         }
-        .onChange(of: myBlockAnswer) { _ in
-            // keep local draft in sync with latest server answer for convenience
-            if let mine = myBlockAnswer {
-                myDraftBlock = mine
-            }
+        .onChange(of: setup.step) { _ in
+            // When step changes, try hydrate local drafts from server answers if present
+            hydrateDraftsFromServer()
         }
         .onChange(of: setup.phase) { newPhase in
-            // Navigate to home when phase turns complete
             if SetupPhaseLocal(rawValue: newPhase) == .complete {
-                persistApprovedConfiguration()
+                persistApprovedConfiguration() // now writes selection + weekly plan to shared + enforces
                 navigateToHome = true
             }
         }
@@ -295,39 +315,12 @@ struct SharedSetupFlowView: View {
         return setup.submitted.first(where: { $0.key != uid })?.value ?? false
     }
 
-    private var myBlockAnswer: BlockSchedule? {
-        guard let uid else { return nil }
-        return decodeBlock(from: setup.answers[uid])
-    }
-
-    private var partnerBlockAnswer: BlockSchedule? {
-        // Prefer explicit "other uid" when we know mine; otherwise fall back to "only answer present"
-        if let uid, let partnerAnswers = setup.answers.first(where: { $0.key != uid })?.value {
-            return decodeBlock(from: partnerAnswers)
-        }
-        if setup.answers.count == 1, let only = setup.answers.values.first {
-            return decodeBlock(from: only)
-        }
-        return nil
-    }
-
-    private func decodeBlock(from dict: [String: AnyCodable]?) -> BlockSchedule? {
-        guard let dict else { return nil }
-        let start = (dict["startMinutes"]?.value as? Int) ?? 0
-        let end = (dict["endMinutes"]?.value as? Int) ?? 0
-        return BlockSchedule(startMinutes: start, endMinutes: end)
-    }
-
     // MARK: - Active/Waiting gating
 
-    // Decide if this device should be in waiting full-screen state
     private var shouldShowWaitingFullScreen: Bool {
         let role = currentRole
         let phase = currentPhase
 
-        // Active states:
-        // A can submit in awaitingASubmission; B approves in awaitingBApproval
-        // B can submit in awaitingBSubmission; A approves in awaitingAApproval
         switch (role, phase) {
         case ("A", .awaitingASubmission),
              ("B", .awaitingBApproval),
@@ -341,18 +334,17 @@ struct SharedSetupFlowView: View {
         }
     }
 
-    private var waitingTitle: String {
-        "Waiting for your partner"
-    }
+    private var waitingTitle: String { "Waiting for your partner" }
 
     private var waitingMessageLong: String {
+        let stepName = setup.step == SetupStepID.appSelection ? "apps" : "times"
         switch currentPhase {
         case .awaitingASubmission:
-            return currentRole == "B" ? "Your partner is choosing times. Please look at their phone." : "Waiting…"
+            return currentRole == "B" ? "Your partner is choosing \(stepName). Please look at their phone." : "Waiting…"
         case .awaitingBApproval:
             return currentRole == "A" ? "Waiting for your partner to confirm your proposal." : "Waiting…"
         case .awaitingBSubmission:
-            return currentRole == "A" ? "Your partner is choosing times. Please look at their phone." : "Waiting…"
+            return currentRole == "A" ? "Your partner is choosing \(stepName). Please look at their phone." : "Waiting…"
         case .awaitingAApproval:
             return currentRole == "B" ? "Waiting for your partner to confirm your proposal." : "Waiting…"
         case .complete:
@@ -373,7 +365,7 @@ struct SharedSetupFlowView: View {
             let snap = try await ref.getDocument()
             if !snap.exists {
                 try await ref.setData([
-                    "step": SetupStepID.blockSchedule,
+                    "step": SetupStepID.appSelection, // start with app selection
                     "stepIndex": 0,
                     "answers": [:],
                     "approvals": [:],
@@ -383,22 +375,17 @@ struct SharedSetupFlowView: View {
                     "updatedAt": FieldValue.serverTimestamp()
                 ])
             } else {
-                // Ensure fields exist if migrating
-                try await ref.setData([
-                    "submitted": FieldValue.delete()
-                ], merge: true)
-                try await ref.setData([
-                    "submitted": [:]
-                ], merge: true)
-                if (snap.data()?["phase"] as? String) == nil {
-                    try await ref.setData([
-                        "phase": SetupPhaseLocal.awaitingASubmission.rawValue
-                    ], merge: true)
+                if (snap.data()?["step"] as? String) == nil {
+                    try await ref.setData(["step": SetupStepID.appSelection, "stepIndex": 0], merge: true)
+                }
+                if (snap.data()?["submitted"] as? [String: Bool]) == nil {
+                    try await ref.setData(["submitted": [:]], merge: true)
                 }
                 if (snap.data()?["approvedAnswers"] as? [String: Any]) == nil {
-                    try await ref.setData([
-                        "approvedAnswers": [:]
-                    ], merge: true)
+                    try await ref.setData(["approvedAnswers": [:]], merge: true)
+                }
+                if (snap.data()?["phase"] as? String) == nil {
+                    try await ref.setData(["phase": SetupPhaseLocal.awaitingASubmission.rawValue], merge: true)
                 }
             }
         } catch {
@@ -415,8 +402,7 @@ struct SharedSetupFlowView: View {
                 return
             }
             guard let data = snapshot?.data() else { return }
-            // Lightweight decode
-            let step = data["step"] as? String ?? SetupStepID.blockSchedule
+            let step = data["step"] as? String ?? SetupStepID.appSelection
             let stepIndex = data["stepIndex"] as? Int ?? 0
             let answersRaw = (data["answers"] as? [String: [String: Any]]) ?? [:]
             let approvalsRaw = (data["approvals"] as? [String: Bool]) ?? [:]
@@ -451,171 +437,26 @@ struct SharedSetupFlowView: View {
                 self.setup.approvedAnswers = approvedAnswers
                 self.setup.phase = phaseRaw
                 self.errorMessage = nil
+                self.hydrateDraftsFromServer()
             }
         }
     }
 
-    // MARK: - Step 1: Block schedule submission/approval (Transactional)
-
-    private func submitMyBlockProposal_TX() async {
-        guard let ref = setupDocRef(), let uid else { return }
-        isSaving = true
-        defer { isSaving = false }
-
-        let payload: [String: Any] = [
-            "startMinutes": myDraftBlock.startMinutes,
-            "endMinutes": myDraftBlock.endMinutes
-        ]
-
-        let myRole = currentRole
-
-        do {
-            try await db.runTransaction { txn, errorPtr in
-                do {
-                    let snap = try txn.getDocument(ref)
-                    guard var data = snap.data() else { return nil }
-
-                    let phaseRaw = (data["phase"] as? String) ?? SetupPhaseLocal.awaitingASubmission.rawValue
-                    guard let phase = SetupPhaseLocal(rawValue: phaseRaw) else { return nil }
-
-                    // Validate allowed submitter based on phase
-                    let canSubmitA = (myRole == "A" && phase == .awaitingASubmission)
-                    let canSubmitB = (myRole == "B" && phase == .awaitingBSubmission)
-                    guard canSubmitA || canSubmitB else {
-                        errorPtr?.pointee = NSError(domain: "whistl", code: 1, userInfo: [NSLocalizedDescriptionKey: "You can’t submit at this time."])
-                        return nil
-                    }
-
-                    // Write my answer and submitted flag
-                    var answers = (data["answers"] as? [String: Any]) ?? [:]
-                    answers[uid] = payload
-                    var submitted = (data["submitted"] as? [String: Bool]) ?? [:]
-                    submitted[uid] = true
-
-                    data["answers"] = answers
-                    data["submitted"] = submitted
-                    data["updatedAt"] = FieldValue.serverTimestamp()
-
-                    // Advance phase
-                    if canSubmitA {
-                        data["phase"] = SetupPhaseLocal.awaitingBApproval.rawValue
-                    } else if canSubmitB {
-                        data["phase"] = SetupPhaseLocal.awaitingAApproval.rawValue
-                    }
-
-                    txn.setData(data, forDocument: ref, merge: true)
-                    return nil
-                } catch {
-                    errorPtr?.pointee = error as NSError
-                    return nil
-                }
+    private func hydrateDraftsFromServer() {
+        // On each step, hydrate local draft with my previous answer if present
+        guard let uid else { return }
+        if setup.step == SetupStepID.appSelection {
+            if let payload = setup.answers[uid] {
+                myAppSelection = decodeSelectionFromMap(payload)
             }
-        } catch {
-            await MainActor.run { self.errorMessage = (error as NSError).localizedDescription }
-        }
-    }
-
-    private func approvePartnerProposal_TXCommon(nextPhase: SetupPhaseLocal, advanceToNextStep: Bool) async {
-        guard let ref = setupDocRef(), let uid else { return }
-        isSaving = true
-        defer { isSaving = false }
-
-        let myUid = uid
-
-        do {
-            try await db.runTransaction { txn, errorPtr in
-                do {
-                    let snap = try txn.getDocument(ref)
-                    guard var data = snap.data() else { return nil }
-
-                    let phaseRaw = (data["phase"] as? String) ?? ""
-                    let current = SetupPhaseLocal(rawValue: phaseRaw)
-
-                    // Validate current phase matches what caller expects to approve
-                    let expectedPhase: SetupPhaseLocal = (nextPhase == .awaitingBSubmission) ? .awaitingBApproval :
-                                                         (nextPhase == .awaitingASubmission) ? .awaitingAApproval :
-                                                         (nextPhase == .complete) ? .awaitingAApproval : .awaitingASubmission
-
-                    guard current == expectedPhase else {
-                        errorPtr?.pointee = NSError(domain: "whistl", code: 2, userInfo: [NSLocalizedDescriptionKey: "Phase changed. Try again."])
-                        return nil
-                    }
-
-                    // Find partner entry
-                    let answers = (data["answers"] as? [String: Any]) ?? [:]
-                    guard let partnerEntry = answers.first(where: { key, _ in key != myUid }) else {
-                        errorPtr?.pointee = NSError(domain: "whistl", code: 3, userInfo: [NSLocalizedDescriptionKey: "No partner proposal to approve yet."])
-                        return nil
-                    }
-                    let partnerUid = partnerEntry.key
-                    let partnerPayload = partnerEntry.value as? [String: Any] ?? [:]
-
-                    // Approvals
-                    var approvals = (data["approvals"] as? [String: Bool]) ?? [:]
-                    approvals[myUid] = true
-                    data["approvals"] = approvals
-
-                    // Persist approved snapshot
-                    var approvedAnswers = (data["approvedAnswers"] as? [String: Any]) ?? [:]
-                    approvedAnswers[partnerUid] = partnerPayload
-                    data["approvedAnswers"] = approvedAnswers
-
-                    // Advance phase
-                    data["phase"] = nextPhase.rawValue
-                    data["updatedAt"] = FieldValue.serverTimestamp()
-
-                    // For mid-step switch (A approved -> B submit), reset my flags to allow B’s turn
-                    if nextPhase == .awaitingBSubmission || nextPhase == .awaitingASubmission {
-                        var submitted = (data["submitted"] as? [String: Bool]) ?? [:]
-                        submitted[myUid] = false
-                        data["submitted"] = submitted
-                        approvals[myUid] = false
-                        data["approvals"] = approvals
-                    }
-
-                    // If advancing to next setup step (appSelection), reset step-local fields
-                    if advanceToNextStep {
-                        data["step"] = SetupStepID.appSelection
-                        data["stepIndex"] = 1
-                        data["answers"] = [:]
-                        data["approvals"] = [:]
-                        data["submitted"] = [:]
-                    }
-
-                    // If finishing flow
-                    if nextPhase == .complete {
-                        data["completedAt"] = FieldValue.serverTimestamp()
-                    }
-
-                    txn.setData(data, forDocument: ref, merge: true)
-                    return nil
-                } catch {
-                    errorPtr?.pointee = error as NSError
-                    return nil
-                }
+        } else if setup.step == SetupStepID.weeklySchedule {
+            if let payload = setup.answers[uid] {
+                myWeeklyPlan = decodeWeeklyPlan(from: payload) ?? myWeeklyPlan
             }
-        } catch {
-            await MainActor.run { self.errorMessage = (error as NSError).localizedDescription }
         }
     }
 
-    private func approvePartnerProposal_TX() async {
-        // Determine correct next phase and whether we also advance to next step
-        let role = currentRole
-        let phase = currentPhase
-
-        if role == "B", phase == .awaitingBApproval {
-            // B approves A’s proposal -> next is B submission (still in blockSchedule step)
-            await approvePartnerProposal_TXCommon(nextPhase: .awaitingBSubmission, advanceToNextStep: false)
-        } else if role == "A", phase == .awaitingAApproval {
-            // A approves B’s proposal -> move to next step and reset to A submit
-            await approvePartnerProposal_TXCommon(nextPhase: .awaitingASubmission, advanceToNextStep: true)
-        } else {
-            await MainActor.run { self.errorMessage = "You can’t approve at this time." }
-        }
-    }
-
-    // MARK: - Step 2: App selection submission/approval (Transactional)
+    // MARK: - Step 1: App selection (Transactional)
 
     private func submitMyAppSelection_TX() async {
         guard let ref = setupDocRef(), let uid else { return }
@@ -631,17 +472,21 @@ struct SharedSetupFlowView: View {
                     let snap = try txn.getDocument(ref)
                     guard var data = snap.data() else { return nil }
 
+                    guard (data["step"] as? String) == SetupStepID.appSelection else {
+                        errorPtr?.pointee = NSError(domain: "whistl", code: 40, userInfo: [NSLocalizedDescriptionKey: "Not in app selection step."])
+                        return nil
+                    }
+
                     let phaseRaw = (data["phase"] as? String) ?? SetupPhaseLocal.awaitingASubmission.rawValue
                     guard let phase = SetupPhaseLocal(rawValue: phaseRaw) else { return nil }
 
                     let canSubmitA = (myRole == "A" && phase == .awaitingASubmission)
                     let canSubmitB = (myRole == "B" && phase == .awaitingBSubmission)
                     guard canSubmitA || canSubmitB else {
-                        errorPtr?.pointee = NSError(domain: "whistl", code: 4, userInfo: [NSLocalizedDescriptionKey: "You can’t submit at this time."])
+                        errorPtr?.pointee = NSError(domain: "whistl", code: 41, userInfo: [NSLocalizedDescriptionKey: "You can’t submit at this time."])
                         return nil
                     }
 
-                    // Write my answer and submitted flag
                     var answers = (data["answers"] as? [String: Any]) ?? [:]
                     answers[uid] = payload
                     var submitted = (data["submitted"] as? [String: Bool]) ?? [:]
@@ -650,20 +495,11 @@ struct SharedSetupFlowView: View {
                     data["answers"] = answers
                     data["submitted"] = submitted
                     data["updatedAt"] = FieldValue.serverTimestamp()
-
-                    // Advance phase
-                    if canSubmitA {
-                        data["phase"] = SetupPhaseLocal.awaitingBApproval.rawValue
-                    } else if canSubmitB {
-                        data["phase"] = SetupPhaseLocal.awaitingAApproval.rawValue
-                    }
+                    data["phase"] = canSubmitA ? SetupPhaseLocal.awaitingBApproval.rawValue : SetupPhaseLocal.awaitingAApproval.rawValue
 
                     txn.setData(data, forDocument: ref, merge: true)
                     return nil
-                } catch {
-                    errorPtr?.pointee = error as NSError
-                    return nil
-                }
+                } catch { errorPtr?.pointee = error as NSError; return nil }
             }
         } catch {
             await MainActor.run { self.errorMessage = (error as NSError).localizedDescription }
@@ -685,47 +521,157 @@ struct SharedSetupFlowView: View {
                     let snap = try txn.getDocument(ref)
                     guard var data = snap.data() else { return nil }
 
-                    let phaseRaw = (data["phase"] as? String) ?? ""
-                    guard let current = SetupPhaseLocal(rawValue: phaseRaw) else { return nil }
-
-                    // Expected phase for approver
-                    let expected: SetupPhaseLocal = (role == "B") ? .awaitingBApproval : .awaitingAApproval
-                    guard current == expected else {
-                        errorPtr?.pointee = NSError(domain: "whistl", code: 5, userInfo: [NSLocalizedDescriptionKey: "Phase changed. Try again."])
+                    guard (data["step"] as? String) == SetupStepID.appSelection else {
+                        errorPtr?.pointee = NSError(domain: "whistl", code: 42, userInfo: [NSLocalizedDescriptionKey: "Not in app selection step."])
                         return nil
                     }
 
-                    // Partner entry
+                    let phaseRaw = (data["phase"] as? String) ?? ""
+                    guard let current = SetupPhaseLocal(rawValue: phaseRaw) else { return nil }
+                    let expected: SetupPhaseLocal = (role == "B") ? .awaitingBApproval : .awaitingAApproval
+                    guard current == expected else {
+                        errorPtr?.pointee = NSError(domain: "whistl", code: 43, userInfo: [NSLocalizedDescriptionKey: "Phase changed. Try again."])
+                        return nil
+                    }
+
                     let answers = (data["answers"] as? [String: Any]) ?? [:]
                     guard let partnerEntry = answers.first(where: { key, _ in key != myUid }) else {
-                        errorPtr?.pointee = NSError(domain: "whistl", code: 6, userInfo: [NSLocalizedDescriptionKey: "No partner selection to approve yet."])
+                        errorPtr?.pointee = NSError(domain: "whistl", code: 44, userInfo: [NSLocalizedDescriptionKey: "No partner selection to approve yet."])
                         return nil
                     }
                     let partnerUid = partnerEntry.key
                     let partnerPayload = partnerEntry.value as? [String: Any] ?? [:]
 
-                    // Approvals
                     var approvals = (data["approvals"] as? [String: Bool]) ?? [:]
                     approvals[myUid] = true
                     data["approvals"] = approvals
 
-                    // Snapshot approved selection
                     var approvedAnswers = (data["approvedAnswers"] as? [String: Any]) ?? [:]
                     approvedAnswers[partnerUid] = partnerPayload
                     data["approvedAnswers"] = approvedAnswers
 
-                    // Advance phase
+                    // Move to next step (weeklySchedule) and reset per-step fields; phase returns to awaitingASubmission
+                    data["step"] = SetupStepID.weeklySchedule
+                    data["stepIndex"] = 1
+                    data["answers"] = [:]
+                    data["approvals"] = [:]
+                    data["submitted"] = [:]
+                    data["phase"] = SetupPhaseLocal.awaitingASubmission.rawValue
+                    data["updatedAt"] = FieldValue.serverTimestamp()
+
+                    txn.setData(data, forDocument: ref, merge: true)
+                    return nil
+                } catch { errorPtr?.pointee = error as NSError; return nil }
+            }
+        } catch {
+            await MainActor.run { self.errorMessage = (error as NSError).localizedDescription }
+        }
+    }
+
+    // MARK: - Step 2: Weekly schedule (Transactional)
+
+    private func submitMyWeeklyPlan_TX() async {
+        guard let ref = setupDocRef(), let uid else { return }
+        isSaving = true
+        defer { isSaving = false }
+
+        let payload = encodeWeeklyPlan(myWeeklyPlan)
+        let myRole = currentRole
+
+        do {
+            try await db.runTransaction { txn, errorPtr in
+                do {
+                    let snap = try txn.getDocument(ref)
+                    guard var data = snap.data() else { return nil }
+
+                    guard (data["step"] as? String) == SetupStepID.weeklySchedule else {
+                        errorPtr?.pointee = NSError(domain: "whistl", code: 50, userInfo: [NSLocalizedDescriptionKey: "Not in weekly schedule step."])
+                        return nil
+                    }
+
+                    let phaseRaw = (data["phase"] as? String) ?? SetupPhaseLocal.awaitingASubmission.rawValue
+                    guard let phase = SetupPhaseLocal(rawValue: phaseRaw) else { return nil }
+
+                    let canSubmitA = (myRole == "A" && phase == .awaitingASubmission)
+                    let canSubmitB = (myRole == "B" && phase == .awaitingBSubmission)
+                    guard canSubmitA || canSubmitB else {
+                        errorPtr?.pointee = NSError(domain: "whistl", code: 51, userInfo: [NSLocalizedDescriptionKey: "You can’t submit at this time."])
+                        return nil
+                    }
+
+                    var answers = (data["answers"] as? [String: Any]) ?? [:]
+                    answers[uid] = payload
+                    var submitted = (data["submitted"] as? [String: Bool]) ?? [:]
+                    submitted[uid] = true
+
+                    data["answers"] = answers
+                    data["submitted"] = submitted
+                    data["updatedAt"] = FieldValue.serverTimestamp()
+                    data["phase"] = canSubmitA ? SetupPhaseLocal.awaitingBApproval.rawValue : SetupPhaseLocal.awaitingAApproval.rawValue
+
+                    txn.setData(data, forDocument: ref, merge: true)
+                    return nil
+                } catch { errorPtr?.pointee = error as NSError; return nil }
+            }
+        } catch {
+            await MainActor.run { self.errorMessage = (error as NSError).localizedDescription }
+        }
+    }
+
+    private func approvePartnerWeeklyPlan_TX() async {
+        guard let ref = setupDocRef(), let uid else { return }
+        isSaving = true
+        defer { isSaving = false }
+
+        let myUid = uid
+        let role = currentRole
+        let phase = currentPhase
+
+        do {
+            try await db.runTransaction { txn, errorPtr in
+                do {
+                    let snap = try txn.getDocument(ref)
+                    guard var data = snap.data() else { return nil }
+
+                    guard (data["step"] as? String) == SetupStepID.weeklySchedule else {
+                        errorPtr?.pointee = NSError(domain: "whistl", code: 52, userInfo: [NSLocalizedDescriptionKey: "Not in weekly schedule step."])
+                        return nil
+                    }
+
+                    let phaseRaw = (data["phase"] as? String) ?? ""
+                    guard let current = SetupPhaseLocal(rawValue: phaseRaw) else { return nil }
+                    let expected: SetupPhaseLocal = (role == "B") ? .awaitingBApproval : .awaitingAApproval
+                    guard current == expected else {
+                        errorPtr?.pointee = NSError(domain: "whistl", code: 53, userInfo: [NSLocalizedDescriptionKey: "Phase changed. Try again."])
+                        return nil
+                    }
+
+                    let answers = (data["answers"] as? [String: Any]) ?? [:]
+                    guard let partnerEntry = answers.first(where: { key, _ in key != myUid }) else {
+                        errorPtr?.pointee = NSError(domain: "whistl", code: 54, userInfo: [NSLocalizedDescriptionKey: "No partner schedule to approve yet."])
+                        return nil
+                    }
+                    let partnerUid = partnerEntry.key
+                    let partnerPayload = partnerEntry.value as? [String: Any] ?? [:]
+
+                    var approvals = (data["approvals"] as? [String: Bool]) ?? [:]
+                    approvals[myUid] = true
+                    data["approvals"] = approvals
+
+                    var approvedAnswers = (data["approvedAnswers"] as? [String: Any]) ?? [:]
+                    approvedAnswers[partnerUid] = partnerPayload
+                    data["approvedAnswers"] = approvedAnswers
+
                     if role == "B", phase == .awaitingBApproval {
                         // Move to B submission
                         data["phase"] = SetupPhaseLocal.awaitingBSubmission.rawValue
-                        // Reset my flags for next turn
                         var submitted = (data["submitted"] as? [String: Bool]) ?? [:]
                         submitted[myUid] = false
                         data["submitted"] = submitted
                         approvals[myUid] = false
                         data["approvals"] = approvals
                     } else if role == "A", phase == .awaitingAApproval {
-                        // Finish
+                        // Finish entire setup
                         data["phase"] = SetupPhaseLocal.complete.rawValue
                         data["completedAt"] = FieldValue.serverTimestamp()
                     }
@@ -733,37 +679,14 @@ struct SharedSetupFlowView: View {
                     data["updatedAt"] = FieldValue.serverTimestamp()
                     txn.setData(data, forDocument: ref, merge: true)
                     return nil
-                } catch {
-                    errorPtr?.pointee = error as NSError
-                    return nil
-                }
+                } catch { errorPtr?.pointee = error as NSError; return nil }
             }
         } catch {
             await MainActor.run { self.errorMessage = (error as NSError).localizedDescription }
         }
     }
 
-    // Convert [String: AnyCodable] to [String: Any] for Firestore setData (kept for completeness)
-    private func toPlainMap(_ dict: [String: AnyCodable]) -> [String: Any] {
-        var out: [String: Any] = [:]
-        for (k, v) in dict {
-            switch v.value {
-            case let i as Int: out[k] = i
-            case let d as Double: out[k] = d
-            case let b as Bool: out[k] = b
-            case let s as String: out[k] = s
-            case let m as [String: AnyCodable]:
-                out[k] = toPlainMap(m)
-            case let a as [AnyCodable]:
-                out[k] = a.map { $0.value }
-            default:
-                break
-            }
-        }
-        return out
-    }
-
-    // MARK: - Selection encoding/decoding for Firestore
+    // MARK: - Encoding helpers
 
     private func encodeSelectionToMap(_ sel: FamilyActivitySelection) -> [String: Any] {
         let encoder = JSONEncoder()
@@ -802,9 +725,43 @@ struct SharedSetupFlowView: View {
         return sel
     }
 
+    // Weekly plan encoding: { days: [ { weekday: Int, enabled: Bool, ranges: [ { startMinutes, endMinutes } ] } ] }
+    private func encodeWeeklyPlan(_ plan: WeeklyBlockPlan) -> [String: Any] {
+        var daysArr: [[String: Any]] = []
+        for d in plan.days {
+            let ranges: [[String: Any]] = d.ranges.map { ["startMinutes": $0.startMinutes, "endMinutes": $0.endMinutes] }
+            daysArr.append([
+                "weekday": d.weekdayRaw,
+                "enabled": d.enabled,
+                "ranges": ranges
+            ])
+        }
+        return ["days": daysArr]
+    }
+
+    private func decodeWeeklyPlan(from map: [String: AnyCodable]?) -> WeeklyBlockPlan? {
+        guard let map, let anyDays = map["days"]?.value as? [Any] else { return nil }
+        var days: [DaySchedule] = []
+        for anyDay in anyDays {
+            guard let d = anyDay as? [String: Any] else { continue }
+            let wd = (d["weekday"] as? Int) ?? Weekday.sunday.rawValue
+            let enabled = (d["enabled"] as? Bool) ?? false
+            let anyRanges = (d["ranges"] as? [Any]) ?? []
+            var ranges: [TimeRange] = []
+            for anyR in anyRanges {
+                if let r = anyR as? [String: Any] {
+                    let s = (r["startMinutes"] as? Int) ?? 0
+                    let e = (r["endMinutes"] as? Int) ?? 0
+                    ranges.append(TimeRange(startMinutes: s, endMinutes: e))
+                }
+            }
+            days.append(DaySchedule(weekday: Weekday(rawValue: wd) ?? .sunday, enabled: enabled, ranges: ranges))
+        }
+        return WeeklyBlockPlan(days: days)
+    }
+
     private func unionApprovedSelections() -> FamilyActivitySelection {
         var union = FamilyActivitySelection()
-        // Merge all approvedAnswers payloads
         for (_, payload) in setup.approvedAnswers {
             let sel = decodeSelectionFromMap(payload)
             union.applicationTokens.formUnion(sel.applicationTokens)
@@ -813,35 +770,32 @@ struct SharedSetupFlowView: View {
         return union
     }
 
-    // MARK: - Finalization: persist approved config
+    private func latestApprovedWeeklyPlan() -> WeeklyBlockPlan? {
+        // Try decoding weekly plan from the last approved payload that has "days"
+        for payload in setup.approvedAnswers.values.reversed() {
+            if let plan = decodeWeeklyPlan(from: payload) {
+                return plan
+            }
+        }
+        return nil
+    }
+
+    // MARK: - Finalization: persist approved config to Shared + enforce
 
     private func persistApprovedConfiguration() {
-        // Persist the last approved block schedule if available (replicate across week via legacy bridge)
-        // We use the last approved block payload present in approvedAnswers (if any).
-        let approvedBlocks: [BlockSchedule] = setup.approvedAnswers.values.compactMap { payload in
-            // Try parse as schedule payload first (may not exist in appSelection step)
-            let start = (payload["startMinutes"]?.value as? Int)
-            let end = (payload["endMinutes"]?.value as? Int)
-            if let s = start, let e = end {
-                return BlockSchedule(startMinutes: s, endMinutes: e)
-            }
-            return nil
-        }
-        if let last = approvedBlocks.last {
-            SharedConfigStore.save(startMinutes: last.startMinutes, endMinutes: last.endMinutes)
-            SharedConfigStore.save(isScheduleEnabled: true)
-        } else {
-            // If no schedule found (shouldn't happen if step 1 completed), keep defaults.
-            SharedConfigStore.save(isScheduleEnabled: true)
-        }
-
         // Persist union of approved app selections
         let selection = unionApprovedSelections()
         SharedConfigStore.save(selection: selection)
 
-        // Notify extension and DeviceActivity monitoring
-        postConfigDidChangeDarwinNotification()
-        ReportingScheduler.shared.refreshMonitoringFromShared()
+        // Persist weekly plan (if present) to shared and enable schedule
+        if let plan = latestApprovedWeeklyPlan() {
+            FocusScheduleViewModel.persistWeeklyPlanForShared(plan)
+        } else {
+            // Fallback: enable schedule with a default single window if none found
+            SharedConfigStore.save(isScheduleEnabled: true)
+            postConfigDidChangeDarwinNotification()
+            ReportingScheduler.shared.refreshMonitoringFromShared()
+        }
     }
 }
 
@@ -885,9 +839,9 @@ private struct InfoCarousel: View {
     @State private var index = 0
 
     private let slides: [(String, String, String)] = [
-        ("hands.sparkles.fill", "Two mates. One goal.", "Team up to block gambling apps and keep each other accountable."),
-        ("clock.badge.checkmark", "Set your hours", "Pick times that work for both of you. Nights off? Early starts? Your call."),
-        ("bell.badge.fill", "Stay in the loop", "Get notified when your mate is active so you can nudge and support.")
+        ("apps.iphone", "Pick what to block", "Choose categories and apps to keep off-limits."),
+        ("calendar.badge.clock", "Set your hours", "Pick days and time windows that work for both of you."),
+        ("person.2.fill", "Approve each other", "Only one phone is active at a time. Submit, approve, then swap.")
     ]
 
     var body: some View {
@@ -924,134 +878,39 @@ private struct InfoCarousel: View {
     }
 }
 
-// MARK: - Step Views
+// MARK: - Waiting card
 
-private struct BlockScheduleStepView: View {
-    var myAnswer: BlockSchedule?
-    var partnerAnswer: BlockSchedule?
-    var myApproved: Bool
-    var partnerApproved: Bool
-    var mySubmitted: Bool
-    var partnerSubmitted: Bool
-    var onDraftChange: (BlockSchedule) -> Void
-    var onSubmit: () -> Void
-    var onApprove: () -> Void
-    var isSaving: Bool
+private struct WaitingFullScreen: View {
+    let title: String
+    let message: String
     let brand: BrandPalette
 
-    // Role and phase to gate UI
-    let role: String // "A" or "B"
-    let phase: SetupPhaseLocal
-
-    @State private var start = DateComponents(hour: 21, minute: 0) // 9pm default
-    @State private var end   = DateComponents(hour: 7, minute: 0)  // 7am default
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            // Card: My chooser
-            VStack(alignment: .leading, spacing: 10) {
-                Label("Your proposal", systemImage: "clock.fill")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(brand.accent)
-
-                TimeRangePicker(title: "", start: $start, end: $end, brand: brand)
-                    .onChange(of: start) { _ in onDraftChange(currentAnswer) }
-                    .onChange(of: end) { _ in onDraftChange(currentAnswer) }
-                    .onAppear {
-                        if let my = myAnswer {
-                            start = minutesToComponents(my.startMinutes)
-                            end   = minutesToComponents(my.endMinutes)
-                        }
-                    }
-
-                Text("Tip: Choose times when you’re most likely to be tempted — late nights or downtime.")
-                    .font(.caption)
-                    .foregroundStyle(brand.secondaryText)
-            }
-            .padding(14)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(brand.fieldBackground)
-            )
-
-            // Submit / Partner status row
-            StatusRow(mySubmitted: mySubmitted, partnerSubmitted: partnerSubmitted, brand: brand)
-
-            // Partner preview card
-            VStack(alignment: .leading, spacing: 8) {
-                Label("Partner’s proposal", systemImage: "person.2.fill")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-
-                if let partnerAnswer {
-                    Text("\(formatMinutes(partnerAnswer.startMinutes)) → \(formatMinutes(partnerAnswer.endMinutes))")
-                        .font(.callout)
-                        .foregroundStyle(brand.secondaryText)
-                } else {
-                    Text(waitingPartnerText)
-                        .font(.callout)
-                        .foregroundStyle(brand.secondaryText)
-                }
-            }
-            .padding(14)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(brand.fieldBackground)
-            )
-
-            // Primary action area
-            VStack(alignment: .leading, spacing: 10) {
-                if role == "A", phase == .awaitingASubmission {
-                    PrimaryActionButton(title: "Submit your proposal", isLoading: isSaving, brand: brand, action: onSubmit)
-                } else if role == "B", phase == .awaitingBApproval {
-                    PrimaryActionButton(title: "Approve partner’s proposal", isLoading: isSaving, brand: brand, action: onApprove, disabled: partnerAnswer == nil)
-                } else if role == "B", phase == .awaitingBSubmission {
-                    PrimaryActionButton(title: "Submit your proposal", isLoading: isSaving, brand: brand, action: onSubmit)
-                } else if role == "A", phase == .awaitingAApproval {
-                    PrimaryActionButton(title: "Approve partner’s proposal", isLoading: isSaving, brand: brand, action: onApprove, disabled: partnerAnswer == nil)
-                } else if phase == .complete {
-                    Label("Completed", systemImage: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
-                }
-            }
+        VStack(spacing: 16) {
+            Spacer()
+            Image(systemName: "hourglass")
+                .font(.system(size: 40, weight: .bold))
+                .foregroundStyle(brand.accent)
+            Text(title)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.primary)
+            Text(message)
+                .multilineTextAlignment(.center)
+                .font(.callout)
+                .foregroundStyle(brand.secondaryText)
+                .padding(.horizontal, 16)
+            Spacer()
         }
-    }
-
-    private var waitingPartnerText: String {
-        if role == "A", phase == .awaitingASubmission {
-            return "Pick a time range and submit to share with your partner."
-        } else if role == "B", phase == .awaitingBSubmission {
-            return "Pick a time range and submit to share with your partner."
-        } else {
-            return "Waiting for your partner to choose…"
-        }
-    }
-
-    private var currentAnswer: BlockSchedule {
-        BlockSchedule(startMinutes: componentsToMinutes(start), endMinutes: componentsToMinutes(end))
-    }
-
-    private func componentsToMinutes(_ c: DateComponents) -> Int {
-        let h = c.hour ?? 0
-        let m = c.minute ?? 0
-        return h * 60 + m
-    }
-
-    private func minutesToComponents(_ minutes: Int) -> DateComponents {
-        DateComponents(hour: minutes / 60, minute: minutes % 60)
-    }
-
-    private func formatMinutes(_ minutes: Int) -> String {
-        let h = minutes / 60
-        let m = minutes % 60
-        let comps = DateComponents(hour: h, minute: m)
-        let cal = Calendar.current
-        let date = cal.date(from: comps) ?? Date()
-        let fmt = DateFormatter()
-        fmt.timeStyle = .short
-        return fmt.string(from: date)
+        .frame(maxWidth: .infinity)
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(brand.fieldBackground)
+        )
     }
 }
+
+// MARK: - Status row
 
 private struct StatusRow: View {
     var mySubmitted: Bool
@@ -1102,104 +961,11 @@ private struct PrimaryActionButton: View {
     }
 }
 
-private struct TimeRangePicker: View {
-    let title: String
-    @Binding var start: DateComponents
-    @Binding var end: DateComponents
-    let brand: BrandPalette
-
-    @State private var startDate: Date = Date()
-    @State private var endDate: Date = Date()
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if !title.isEmpty {
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-            }
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Start").font(.caption).foregroundStyle(.secondary)
-                    DatePicker("", selection: Binding(
-                        get: { startDateFromComponents(start) },
-                        set: { newDate in
-                            start = componentsFromDate(newDate)
-                            startDate = newDate
-                        }
-                    ), displayedComponents: [.hourAndMinute])
-                    .labelsHidden()
-                }
-
-                Image(systemName: "arrow.right")
-                    .foregroundStyle(.secondary)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("End").font(.caption).foregroundStyle(.secondary)
-                    DatePicker("", selection: Binding(
-                        get: { startDateFromComponents(end) },
-                        set: { newDate in
-                            end = componentsFromDate(newDate)
-                            endDate = newDate
-                        }
-                    ), displayedComponents: [.hourAndMinute])
-                    .labelsHidden()
-                }
-            }
-            .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(brand.fieldBackground)
-            )
-        }
-        .onAppear {
-            startDate = startDateFromComponents(start)
-            endDate = startDateFromComponents(end)
-        }
-    }
-
-    private func startDateFromComponents(_ comps: DateComponents) -> Date {
-        Calendar.current.date(from: comps) ?? Calendar.current.date(bySettingHour: comps.hour ?? 0, minute: comps.minute ?? 0, second: 0, of: Date()) ?? Date()
-    }
-
-    private func componentsFromDate(_ date: Date) -> DateComponents {
-        Calendar.current.dateComponents([.hour, .minute], from: date)
-    }
-}
-
-// A full-screen waiting card for the non-active device
-private struct WaitingFullScreen: View {
-    let title: String
-    let message: String
-    let brand: BrandPalette
-
-    var body: some View {
-        VStack(spacing: 16) {
-            Spacer()
-            Image(systemName: "hourglass")
-                .font(.system(size: 40, weight: .bold))
-                .foregroundStyle(brand.accent)
-            Text(title)
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(.primary)
-            Text(message)
-                .multilineTextAlignment(.center)
-                .font(.callout)
-                .foregroundStyle(brand.secondaryText)
-                .padding(.horizontal, 16)
-            Spacer()
-        }
-        .frame(maxWidth: .infinity)
-        .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(brand.fieldBackground)
-        )
-    }
-}
+// MARK: - Step 1 UI: App selection
 
 private struct AppSelectionStepView: View {
-    var myApproved: Bool
-    var partnerApproved: Bool
+    @Binding var selection: FamilyActivitySelection
+    var onOpenPicker: () -> Void
     var onSubmit: () -> Void
     var onApprove: () -> Void
     var isSaving: Bool
@@ -1208,7 +974,8 @@ private struct AppSelectionStepView: View {
     let role: String
     let phase: SetupPhaseLocal
 
-    @Binding var selection: FamilyActivitySelection
+    var mySubmitted: Bool
+    var partnerSubmitted: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1220,31 +987,24 @@ private struct AppSelectionStepView: View {
                 .foregroundStyle(brand.secondaryText)
                 .font(.footnote)
 
-            // Minimal inline summary; full picker is in FocusMenu elsewhere
             HStack {
                 Text(summary)
                     .font(.callout)
                     .foregroundStyle(brand.secondaryText)
                 Spacer()
-                Button {
-                    // Placeholder: selection editing is handled in FocusMenu for now.
-                } label: {
-                    Text("Edit selection")
-                }
-                .buttonStyle(.bordered)
-                .disabled(true)
+                Button("Choose apps") { onOpenPicker() }
+                    .buttonStyle(.bordered)
             }
 
-            Divider().opacity(0.2)
+            StatusRow(mySubmitted: mySubmitted, partnerSubmitted: partnerSubmitted, brand: brand)
 
-            // Actions based on role/phase
             VStack(alignment: .leading, spacing: 8) {
                 if role == "A", phase == .awaitingASubmission {
-                    PrimaryActionButton(title: "Submit your selection", isLoading: isSaving, brand: brand, action: onSubmit)
+                    PrimaryActionButton(title: "Submit your selection", isLoading: isSaving, brand: brand, action: onSubmit, disabled: selectionIsEmpty)
                 } else if role == "B", phase == .awaitingBApproval {
                     PrimaryActionButton(title: "Approve partner’s selection", isLoading: isSaving, brand: brand, action: onApprove)
                 } else if role == "B", phase == .awaitingBSubmission {
-                    PrimaryActionButton(title: "Submit your selection", isLoading: isSaving, brand: brand, action: onSubmit)
+                    PrimaryActionButton(title: "Submit your selection", isLoading: isSaving, brand: brand, action: onSubmit, disabled: selectionIsEmpty)
                 } else if role == "A", phase == .awaitingAApproval {
                     PrimaryActionButton(title: "Approve partner’s selection", isLoading: isSaving, brand: brand, action: onApprove)
                 } else if phase == .complete {
@@ -1260,6 +1020,10 @@ private struct AppSelectionStepView: View {
         )
     }
 
+    private var selectionIsEmpty: Bool {
+        selection.applicationTokens.isEmpty && selection.categoryTokens.isEmpty
+    }
+
     private var summary: String {
         let apps = selection.applicationTokens.count
         let cats = selection.categoryTokens.count
@@ -1268,5 +1032,278 @@ private struct AppSelectionStepView: View {
         if apps > 0 { parts.append("\(apps) app\(apps == 1 ? "" : "s")") }
         if cats > 0 { parts.append("\(cats) categor\(cats == 1 ? "y" : "ies")") }
         return parts.joined(separator: " + ")
+    }
+}
+
+// MARK: - Step 2 UI: Weekly schedule
+
+private struct WeeklyScheduleStepView: View {
+    @Binding var plan: WeeklyBlockPlan
+    var onSubmit: () -> Void
+    var onApprove: () -> Void
+    var isSaving: Bool
+    let brand: BrandPalette
+
+    let role: String
+    let phase: SetupPhaseLocal
+
+    var mySubmitted: Bool
+    var partnerSubmitted: Bool
+
+    // Collapsible days state
+    @State private var collapsed: [Bool] = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("When should blocking be active?")
+                .font(.headline)
+                .foregroundStyle(.primary)
+
+            Text("Choose days and add one or more time ranges for each. Your mate will confirm your plan.")
+                .foregroundStyle(brand.secondaryText)
+                .font(.footnote)
+
+            Toggle(isOn: Binding(
+                get: { anyDayEnabled },
+                set: { enabled in
+                    // Toggle all days at once if user flips this
+                    for i in plan.days.indices {
+                        plan.days[i].enabled = enabled
+                        if enabled && plan.days[i].ranges.isEmpty {
+                            plan.days[i].ranges = [TimeRange(startMinutes: 21*60, endMinutes: 7*60)]
+                        }
+                    }
+                }
+            )) { Text(anyDayEnabled ? "Schedule enabled" : "Schedule disabled") }
+
+            // Expand/Collapse controls
+            if !plan.days.isEmpty {
+                HStack(spacing: 12) {
+                    Button {
+                        withAnimation {
+                            collapsed = Array(repeating: false, count: plan.days.count)
+                        }
+                    } label: { Text("Expand all").font(.footnote.weight(.semibold)) }
+                    .buttonStyle(.bordered)
+
+                    Button {
+                        withAnimation {
+                            collapsed = Array(repeating: true, count: plan.days.count)
+                        }
+                    } label: { Text("Collapse all").font(.footnote.weight(.semibold)) }
+                    .buttonStyle(.bordered)
+
+                    Spacer()
+                }
+            }
+
+            VStack(spacing: 10) {
+                ForEach(plan.days.indices, id: \.self) { idx in
+                    dayEditor(dayIndex: idx)
+                }
+            }
+
+            StatusRow(mySubmitted: mySubmitted, partnerSubmitted: partnerSubmitted, brand: brand)
+
+            VStack(alignment: .leading, spacing: 8) {
+                if role == "A", phase == .awaitingASubmission {
+                    PrimaryActionButton(title: "Submit your schedule", isLoading: isSaving, brand: brand, action: onSubmit, disabled: !isValid)
+                } else if role == "B", phase == .awaitingBApproval {
+                    PrimaryActionButton(title: "Approve partner’s schedule", isLoading: isSaving, brand: brand, action: onApprove)
+                } else if role == "B", phase == .awaitingBSubmission {
+                    PrimaryActionButton(title: "Submit your schedule", isLoading: isSaving, brand: brand, action: onSubmit, disabled: !isValid)
+                } else if role == "A", phase == .awaitingAApproval {
+                    PrimaryActionButton(title: "Approve partner’s schedule", isLoading: isSaving, brand: brand, action: onApprove)
+                } else if phase == .complete {
+                    Label("Completed", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                }
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(brand.fieldBackground)
+        )
+        .onAppear {
+            // Initialize collapsed states if needed
+            if collapsed.count != plan.days.count {
+                collapsed = defaultCollapsedStates()
+            }
+        }
+        .onChange(of: plan.days.count) { _ in
+            if collapsed.count != plan.days.count {
+                collapsed = defaultCollapsedStates()
+            }
+        }
+    }
+
+    private func defaultCollapsedStates() -> [Bool] {
+        // Collapse all except today to keep UI short
+        let today = Weekday.today()
+        return plan.days.map { $0.weekday != today }
+    }
+
+    private var anyDayEnabled: Bool {
+        plan.days.contains(where: { $0.enabled })
+    }
+
+    private var isValid: Bool {
+        plan.days.contains { $0.enabled && !$0.ranges.isEmpty }
+    }
+
+    @ViewBuilder
+    private func dayEditor(dayIndex: Int) -> some View {
+        let day = plan.days[dayIndex]
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Button {
+                    withAnimation { collapsed[dayIndex].toggle() }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: collapsed[safe: dayIndex] == true ? "chevron.right" : "chevron.down")
+                            .foregroundStyle(.secondary)
+                        Text(weekdayDisplayName(Weekday(rawValue: day.weekdayRaw) ?? .sunday))
+                            .font(.callout.weight(.semibold))
+                    }
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                Toggle(isOn: Binding(
+                    get: { day.enabled },
+                    set: { plan.days[dayIndex].enabled = $0 }
+                )) {
+                    Text(day.enabled ? "Enabled" : "Disabled")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .toggleStyle(.switch)
+
+                Button {
+                    plan.days[dayIndex].enabled = true
+                    plan.days[dayIndex].ranges.append(TimeRange(startMinutes: 21*60, endMinutes: 7*60))
+                    if collapsed[safe: dayIndex] == true {
+                        withAnimation { collapsed[dayIndex] = false }
+                    }
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                }
+                .buttonStyle(.borderless)
+                .disabled(!day.enabled)
+            }
+
+            if day.enabled && (collapsed[safe: dayIndex] == false) {
+                if day.ranges.isEmpty {
+                    Text("No ranges. Add one to block on this day.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(day.ranges.indices, id: \.self) { rIdx in
+                        rangeEditor(dayIndex: dayIndex, rangeIndex: rIdx)
+                    }
+                }
+            }
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(brand.fieldBackground)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(brand.cardStroke, lineWidth: 1)
+        )
+    }
+
+    @ViewBuilder
+    private func rangeEditor(dayIndex: Int, rangeIndex: Int) -> some View {
+        let range = plan.days[dayIndex].ranges[rangeIndex]
+        HStack(spacing: 12) {
+            VStack(alignment: .leading) {
+                Text("Start").font(.caption).foregroundStyle(.secondary)
+                DatePicker(
+                    "",
+                    selection: Binding<Date>(
+                        get: { date(fromMinutes: range.startMinutes) },
+                        set: { newDate in
+                            plan.days[dayIndex].ranges[rangeIndex].startMinutes = minutes(from: newDate)
+                        }
+                    ),
+                    displayedComponents: [.hourAndMinute]
+                )
+                .labelsHidden()
+            }
+
+            Image(systemName: "arrow.right").foregroundStyle(.secondary)
+
+            VStack(alignment: .leading) {
+                Text("End").font(.caption).foregroundStyle(.secondary)
+                DatePicker(
+                    "",
+                    selection: Binding<Date>(
+                        get: { date(fromMinutes: range.endMinutes) },
+                        set: { newDate in
+                            plan.days[dayIndex].ranges[rangeIndex].endMinutes = minutes(from: newDate)
+                        }
+                    ),
+                    displayedComponents: [.hourAndMinute]
+                )
+                .labelsHidden()
+            }
+
+            Spacer()
+
+            Button(role: .destructive) {
+                plan.days[dayIndex].ranges.remove(at: rangeIndex)
+            } label: {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(.borderless)
+        }
+        .padding(8)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(brand.fieldBackground)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(brand.cardStroke, lineWidth: 1)
+        )
+    }
+
+    private func weekdayDisplayName(_ day: Weekday) -> String {
+        switch day {
+        case .sunday: return "Sunday"
+        case .monday: return "Monday"
+        case .tuesday: return "Tuesday"
+        case .wednesday: return "Wednesday"
+        case .thursday: return "Thursday"
+        case .friday: return "Friday"
+        case .saturday: return "Saturday"
+        }
+    }
+
+    private func date(fromMinutes minutes: Int) -> Date {
+        let h = minutes / 60
+        let m = minutes % 60
+        let comps = DateComponents(hour: h, minute: m)
+        return Calendar.current.date(from: comps) ?? Date()
+    }
+
+    private func minutes(from date: Date) -> Int {
+        let comps = Calendar.current.dateComponents([.hour, .minute], from: date)
+        let h = comps.hour ?? 0
+        let m = comps.minute ?? 0
+        return h * 60 + m
+    }
+}
+
+// Safe subscript to avoid index crashes for collapsed array
+private extension Array where Element == Bool {
+    subscript(safe index: Int) -> Bool? {
+        guard indices.contains(index) else { return nil }
+        return self[index]
     }
 }

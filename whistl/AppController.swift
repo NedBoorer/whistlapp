@@ -364,9 +364,9 @@ class AppController {
                 txn.setData(["pairId": pairId], forDocument: self.userDoc(uid: uid), merge: true)
 
                 // Initialize setup/current with server-controlled phase
-                // Phase starts with A must submit first
+                // IMPORTANT: step must match SharedSetupFlow expectations
                 txn.setData([
-                    "step": "blockSchedule",
+                    "step": "appSelection",
                     "stepIndex": 0,
                     "answers": [:],
                     "approvals": [:],
@@ -423,10 +423,23 @@ class AppController {
                         "updatedAt": FieldValue.serverTimestamp()
                     ], merge: true)
                 }
+                // If step exists but is invalid, normalize to appSelection
+                if let step = data["step"] as? String,
+                   !(step == "appSelection" || step == "weeklySchedule") {
+                    try await setupRef.setData([
+                        "step": "appSelection",
+                        "stepIndex": 0,
+                        "answers": [:],
+                        "approvals": [:],
+                        "submitted": [:],
+                        "approvedAnswers": [:],
+                        "updatedAt": FieldValue.serverTimestamp()
+                    ], merge: true)
+                }
             } else {
-                // Create minimal doc
+                // Create minimal doc with correct step
                 try await setupRef.setData([
-                    "step": "blockSchedule",
+                    "step": "appSelection",
                     "stepIndex": 0,
                     "answers": [:],
                     "approvals": [:],
