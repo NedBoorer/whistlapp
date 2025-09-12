@@ -32,12 +32,32 @@ struct ContentView: View {
                     .tint(brand.accent)
 
                 case .authenticated:
-                    // For testing: skip pairing/setup and go straight to home (which links to the blocker UI).
-                    NavigationStack {
-                        WhisprHomeView()
-                            .navigationBarTitleDisplayMode(.inline)
+                    switch appController.pairingLoadState {
+                    case .unknown:
+                        // Unknown initial state; show a spinner briefly until listener updates.
+                        ProgressView()
+                            .tint(brand.accent)
+
+                    case .loading:
+                        // Explicit loading while fetching user profile/pair state.
+                        ProgressView()
+                            .tint(brand.accent)
+
+                    case .unpaired:
+                        // Require pairing to continue.
+                        NavigationStack {
+                            PairingGateView()
+                        }
+                        .tint(brand.accent)
+
+                    case .paired:
+                        // Route paired users into the shared setup flow until it completes.
+                        NavigationStack {
+                            SharedSetupFlowView()
+                                .navigationBarTitleDisplayMode(.inline)
+                        }
+                        .tint(brand.accent)
                     }
-                    .tint(brand.accent)
                 }
             }
         }

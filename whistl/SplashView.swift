@@ -23,13 +23,14 @@ struct SplashView: View {
                 .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 2)
                 .scaleEffect(animate ? 1.06 : 0.94)
                 .opacity(animate ? 1.0 : 0.92)
-                .animation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true), value: animate)
+                .animation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true), value: animate)
                 .accessibilityLabel("whistl")
                 .accessibilityAddTraits(.isHeader)
         }
         .onAppear {
             animate = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            // Extend the splash display duration so the pulse runs longer
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                 guard !hasFinished else { return }
                 hasFinished = true
                 onFinished()
@@ -40,3 +41,4 @@ struct SplashView: View {
 }
 
 #Preview { SplashView(onFinished: {}) }
+

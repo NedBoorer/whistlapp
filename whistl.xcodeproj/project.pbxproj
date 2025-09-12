@@ -9,12 +9,10 @@
 /* Begin PBXBuildFile section */
 		881A3C9E2E6FC86900CE1BD2 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 881A3C9D2E6FC86900CE1BD2 /* FirebaseFirestore */; };
 		881A3CA02E6FCC9000CE1BD2 /* Brand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 881A3C9F2E6FCC9000CE1BD2 /* Brand.swift */; };
-		881A3CA82E6FE49D00CE1BD2 /* SharedSetupFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 881A3CA72E6FE49D00CE1BD2 /* SharedSetupFlow.swift */; };
 		881A3CC02E70185000CE1BD2 /* WhisprHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 881A3CBF2E70185000CE1BD2 /* WhisprHomeView.swift */; };
 		88702FB92E6EB3A3003D5061 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 88702FB82E6EB3A3003D5061 /* FirebaseAuth */; };
 		88A771392E72886E0024A9D5 /* ManagedSettings.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 88A771382E72886E0024A9D5 /* ManagedSettings.framework */; };
 		88A771412E72886E0024A9D5 /* shieldwhistl.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 88A771362E72886D0024A9D5 /* shieldwhistl.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		88F430BF2E728B8F00596C4E /* SharedSetupFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 881A3CA72E6FE49D00CE1BD2 /* SharedSetupFlow.swift */; };
 		88F430C02E728B9400596C4E /* WhisprHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 881A3CBF2E70185000CE1BD2 /* WhisprHomeView.swift */; };
 		88F430C12E728B9900596C4E /* Brand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 881A3C9F2E6FCC9000CE1BD2 /* Brand.swift */; };
 		88F430CF2E728C5800596C4E /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 88F430CE2E728C5800596C4E /* FirebaseAuth */; };
@@ -33,8 +31,6 @@
 		88F4323B2E738EEC00596C4E /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 88F4323A2E738EEC00596C4E /* FirebaseCore */; };
 		88F4323C2E738F1F00596C4E /* Brand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 881A3C9F2E6FCC9000CE1BD2 /* Brand.swift */; };
 		88F4323D2E738F1F00596C4E /* Brand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 881A3C9F2E6FCC9000CE1BD2 /* Brand.swift */; };
-		88F4323E2E738F2500596C4E /* SharedSetupFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 881A3CA72E6FE49D00CE1BD2 /* SharedSetupFlow.swift */; };
-		88F4323F2E738F2500596C4E /* SharedSetupFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 881A3CA72E6FE49D00CE1BD2 /* SharedSetupFlow.swift */; };
 		88F432402E738F2B00596C4E /* WhisprHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 881A3CBF2E70185000CE1BD2 /* WhisprHomeView.swift */; };
 		88F432412E738F2B00596C4E /* WhisprHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 881A3CBF2E70185000CE1BD2 /* WhisprHomeView.swift */; };
 		88F723372E73AB1C00103ADF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 88F723362E73AB1C00103ADF /* LaunchScreen.storyboard */; };
@@ -95,7 +91,6 @@
 
 /* Begin PBXFileReference section */
 		881A3C9F2E6FCC9000CE1BD2 /* Brand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Brand.swift; sourceTree = "<group>"; };
-		881A3CA72E6FE49D00CE1BD2 /* SharedSetupFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedSetupFlow.swift; sourceTree = "<group>"; };
 		881A3CBF2E70185000CE1BD2 /* WhisprHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhisprHomeView.swift; sourceTree = "<group>"; };
 		88702FA72E6EB154003D5061 /* whistl.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = whistl.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		88A771362E72886D0024A9D5 /* shieldwhistl.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = shieldwhistl.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -128,6 +123,7 @@
 				ProfileView.swift,
 				ReportHostView.swift,
 				SharedConfig.swift,
+				SharedSetupFlow.swift,
 				SignUpView.swift,
 				SplashView.swift,
 				WelcomeView.swift,
@@ -185,6 +181,7 @@
 				ProfileView.swift,
 				ReportHostView.swift,
 				SharedConfig.swift,
+				SharedSetupFlow.swift,
 				SignUpView.swift,
 				SplashView.swift,
 				WelcomeView.swift,
@@ -206,6 +203,7 @@
 				ProfileView.swift,
 				ReportHostView.swift,
 				SharedConfig.swift,
+				SharedSetupFlow.swift,
 				SignUpView.swift,
 				SplashView.swift,
 				WelcomeView.swift,
@@ -380,7 +378,6 @@
 				88A771372E72886E0024A9D5 /* Frameworks */,
 				88702FA82E6EB154003D5061 /* Products */,
 				881A3C9F2E6FCC9000CE1BD2 /* Brand.swift */,
-				881A3CA72E6FE49D00CE1BD2 /* SharedSetupFlow.swift */,
 				881A3CBF2E70185000CE1BD2 /* WhisprHomeView.swift */,
 			);
 			sourceTree = "<group>";
@@ -604,7 +601,6 @@
 			files = (
 				881A3CC02E70185000CE1BD2 /* WhisprHomeView.swift in Sources */,
 				881A3CA02E6FCC9000CE1BD2 /* Brand.swift in Sources */,
-				881A3CA82E6FE49D00CE1BD2 /* SharedSetupFlow.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -613,7 +609,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				88F430C02E728B9400596C4E /* WhisprHomeView.swift in Sources */,
-				88F430BF2E728B8F00596C4E /* SharedSetupFlow.swift in Sources */,
 				88F430C12E728B9900596C4E /* Brand.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -622,7 +617,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				88F4323E2E738F2500596C4E /* SharedSetupFlow.swift in Sources */,
 				88F432402E738F2B00596C4E /* WhisprHomeView.swift in Sources */,
 				88F4323C2E738F1F00596C4E /* Brand.swift in Sources */,
 			);
@@ -632,7 +626,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				88F4323F2E738F2500596C4E /* SharedSetupFlow.swift in Sources */,
 				88F432412E738F2B00596C4E /* WhisprHomeView.swift in Sources */,
 				88F4323D2E738F1F00596C4E /* Brand.swift in Sources */,
 			);

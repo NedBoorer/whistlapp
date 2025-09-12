@@ -54,6 +54,14 @@ class AppController {
     // Partner UID cached (derived from pair doc)
     var partnerUID: String? = nil
 
+    // Setup workflow observation
+    var currentSetupPhaseRaw: String? = nil
+    var currentSetupPhase: SetupPhase? {
+        guard let raw = currentSetupPhaseRaw else { return nil }
+        return SetupPhase(rawValue: raw)
+    }
+    private var setupListener: ListenerRegistration?
+
     private var db: Firestore { Firestore.firestore() }
 
     @MainActor
@@ -70,6 +78,8 @@ class AppController {
                 self.isMemberA = false
                 self.isMemberB = false
                 self.partnerUID = nil
+                self.detachSetupListener()
+                self.currentSetupPhaseRaw = nil
                 return
             }
 
@@ -80,6 +90,8 @@ class AppController {
             self.isMemberA = false
             self.isMemberB = false
             self.partnerUID = nil
+            self.detachSetupListener()
+            self.currentSetupPhaseRaw = nil
 
             Task {
                 let ok = await self.loadUserProfile(uid: user.uid)
@@ -132,6 +144,8 @@ class AppController {
             self.isMemberA = false
             self.isMemberB = false
             self.partnerUID = nil
+            self.detachSetupListener()
+            self.currentSetupPhaseRaw = nil
         }
     }
 
@@ -186,12 +200,22 @@ class AppController {
                 await self.resolveRoleForCurrentUser(pairId: pid, uid: uid)
                 // Also resolve partner UID
                 await self.resolvePartnerUID(pairId: pid, uid: uid)
+                // If finalized, attach setup listener
+                if finalized {
+                    await self.ensureInitialSetupPhase(pairId: pid)
+                    self.attachSetupListener(for: pid)
+                } else {
+                    self.detachSetupListener()
+                    self.currentSetupPhaseRaw = nil
+                }
             } else {
                 self.pairId = nil
                 self.pairingLoadState = .unpaired
                 self.isMemberA = false
                 self.isMemberB = false
                 self.partnerUID = nil
+                self.detachSetupListener()
+                self.currentSetupPhaseRaw = nil
             }
             return true
         } catch {
@@ -200,6 +224,8 @@ class AppController {
             self.isMemberA = false
             self.isMemberB = false
             self.partnerUID = nil
+            self.detachSetupListener()
+            self.currentSetupPhaseRaw = nil
             return false
         }
     }
@@ -223,6 +249,10 @@ class AppController {
                     // Ensure setup doc exists when finalized
                     if finalized {
                         await self.ensureInitialSetupPhase(pairId: pid)
+                        self.attachSetupListener(for: pid)
+                    } else {
+                        self.detachSetupListener()
+                        self.currentSetupPhaseRaw = nil
                     }
                 } else {
                     self.pairId = nil
@@ -230,6 +260,8 @@ class AppController {
                     self.isMemberA = false
                     self.isMemberB = false
                     self.partnerUID = nil
+                    self.detachSetupListener()
+                    self.currentSetupPhaseRaw = nil
                 }
             }
         }
@@ -283,6 +315,8 @@ class AppController {
             self.isMemberA = true
             self.isMemberB = false
             self.partnerUID = nil
+            self.detachSetupListener()
+            self.currentSetupPhaseRaw = nil
         }
     }
 
@@ -357,6 +391,8 @@ class AppController {
             self.isMemberA = false
             self.isMemberB = true
             await self.resolvePartnerUID(pairId: pairRef.documentID, uid: uid)
+            await self.ensureInitialSetupPhase(pairId: pairRef.documentID)
+            self.attachSetupListener(for: pairRef.documentID)
         }
     }
 
@@ -462,5 +498,24 @@ class AppController {
             }
         }
     }
-}
 
+    // MARK: - Setup listener (pairSpaces/{pairId}/setup/current)
+
+    private func attachSetupListener(for pairId: String) {
+        detachSetupListener()
+        let ref = pairSpacesCollection.document(pairId).collection("setup").document("current")
+        setupListener = ref.addSnapshotListener { [weak self] snapshot, _ in
+            guard let self else { return }
+            guard let data = snapshot?.data() else { return }
+            let phase = data["phase"] as? String
+            Task { @MainActor in
+                self.currentSetupPhaseRaw = phase
+            }
+        }
+    }
+
+    private func detachSetupListener() {
+        setupListener?.remove()
+        setupListener = nil
+    }
+}

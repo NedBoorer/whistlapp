@@ -1,6 +1,8 @@
 import SwiftUI
 import FirebaseAuth
 import FirebaseFirestore
+import FamilyControls
+import ManagedSettings
 
 // MARK: - Firestore models
 
@@ -99,8 +101,11 @@ struct SharedSetupFlowView: View {
     @State private var isSaving = false
     @State private var errorMessage: String?
 
-    // local draft for A or B before submission
+    // local draft for A or B before submission (times)
     @State private var myDraftBlock: BlockSchedule = BlockSchedule(startMinutes: 21*60, endMinutes: 7*60)
+
+    // local draft for app selection
+    @State private var myAppSelection: FamilyActivitySelection = FamilyActivitySelection()
 
     // Navigation to home when flow completes
     @State private var navigateToHome = false
@@ -117,7 +122,7 @@ struct SharedSetupFlowView: View {
                 // Top header with gradient and progress
                 HeaderWithProgress(
                     title: "Set up your blocker together",
-                    subtitle: "Stay accountable with your mate. Choose times to block, approve each other, and you’re set.",
+                    subtitle: "Only one phone is active at a time. Submit, your mate approves, then swap.",
                     stepIndex: setup.stepIndex,
                     totalSteps: 2,
                     brand: brand
@@ -125,6 +130,15 @@ struct SharedSetupFlowView: View {
 
                 // Info slides / small carousel
                 InfoCarousel(brand: brand)
+
+                // Debug/status banner to verify role/phase on each device
+                HStack(spacing: 8) {
+                    Text("Role: \(currentRole) • Phase: \(setup.phase)")
+                        .font(.caption2)
+                        .foregroundStyle(brand.secondaryText)
+                    Spacer()
+                }
+                .padding(.horizontal, 20)
 
                 if let errorMessage {
                     Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
@@ -134,41 +148,52 @@ struct SharedSetupFlowView: View {
                         .transition(.opacity)
                 }
 
-                // Step content
+                // Step content OR Waiting screen (enforce "only one phone active at a time")
                 Group {
-                    switch setup.step {
-                    case SetupStepID.blockSchedule:
-                        BlockScheduleStepView(
-                            myAnswer: myBlockAnswer,
-                            partnerAnswer: partnerBlockAnswer,
-                            myApproved: myApproved,
-                            partnerApproved: partnerApproved,
-                            mySubmitted: mySubmitted,
-                            partnerSubmitted: partnerSubmitted,
-                            onDraftChange: { ans in myDraftBlock = ans },
-                            onSubmit: { Task { await submitMyBlockProposal() } },
-                            onApprove: { Task { await approvePartnerProposalAndPersist() } },
-                            isSaving: isSaving,
-                            brand: brand,
-                            role: currentRole,
-                            phase: currentPhase
+                    if shouldShowWaitingFullScreen {
+                        WaitingFullScreen(
+                            title: waitingTitle,
+                            message: waitingMessageLong,
+                            brand: brand
                         )
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
-                    case SetupStepID.appSelection:
-                        AppSelectionStepView(
-                            myApproved: myApproved,
-                            partnerApproved: partnerApproved,
-                            onApprove: { Task { await approvePartnerProposalAndPersist() } },
-                            isSaving: isSaving,
-                            brand: brand,
-                            role: currentRole,
-                            phase: currentPhase
-                        )
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
-                    default:
-                        VStack(spacing: 8) {
-                            Text("Finalizing setup…")
-                            ProgressView().tint(brand.accent)
+                        .transition(.opacity)
+                    } else {
+                        switch setup.step {
+                        case SetupStepID.blockSchedule:
+                            BlockScheduleStepView(
+                                myAnswer: myBlockAnswer,
+                                partnerAnswer: partnerBlockAnswer,
+                                myApproved: myApproved,
+                                partnerApproved: partnerApproved,
+                                mySubmitted: mySubmitted,
+                                partnerSubmitted: partnerSubmitted,
+                                onDraftChange: { ans in myDraftBlock = ans },
+                                onSubmit: { Task { await submitMyBlockProposal_TX() } },
+                                onApprove: { Task { await approvePartnerProposal_TX() } },
+                                isSaving: isSaving,
+                                brand: brand,
+                                role: currentRole,
+                                phase: currentPhase
+                            )
+                            .transition(.move(edge: .trailing).combined(with: .opacity))
+                        case SetupStepID.appSelection:
+                            AppSelectionStepView(
+                                myApproved: myApproved,
+                                partnerApproved: partnerApproved,
+                                onSubmit: { Task { await submitMyAppSelection_TX() } },
+                                onApprove: { Task { await approvePartnerSelection_TX() } },
+                                isSaving: isSaving,
+                                brand: brand,
+                                role: currentRole,
+                                phase: currentPhase,
+                                selection: $myAppSelection
+                            )
+                            .transition(.move(edge: .trailing).combined(with: .opacity))
+                        default:
+                            VStack(spacing: 8) {
+                                Text("Finalizing setup…")
+                                ProgressView().tint(brand.accent)
+                            }
                         }
                     }
                 }
@@ -229,6 +254,7 @@ struct SharedSetupFlowView: View {
         .onChange(of: setup.phase) { newPhase in
             // Navigate to home when phase turns complete
             if SetupPhaseLocal(rawValue: newPhase) == .complete {
+                persistApprovedConfiguration()
                 navigateToHome = true
             }
         }
@@ -275,9 +301,14 @@ struct SharedSetupFlowView: View {
     }
 
     private var partnerBlockAnswer: BlockSchedule? {
-        guard let uid else { return nil }
-        let partnerAnswers = setup.answers.first(where: { $0.key != uid })?.value
-        return decodeBlock(from: partnerAnswers)
+        // Prefer explicit "other uid" when we know mine; otherwise fall back to "only answer present"
+        if let uid, let partnerAnswers = setup.answers.first(where: { $0.key != uid })?.value {
+            return decodeBlock(from: partnerAnswers)
+        }
+        if setup.answers.count == 1, let only = setup.answers.values.first {
+            return decodeBlock(from: only)
+        }
+        return nil
     }
 
     private func decodeBlock(from dict: [String: AnyCodable]?) -> BlockSchedule? {
@@ -285,6 +316,48 @@ struct SharedSetupFlowView: View {
         let start = (dict["startMinutes"]?.value as? Int) ?? 0
         let end = (dict["endMinutes"]?.value as? Int) ?? 0
         return BlockSchedule(startMinutes: start, endMinutes: end)
+    }
+
+    // MARK: - Active/Waiting gating
+
+    // Decide if this device should be in waiting full-screen state
+    private var shouldShowWaitingFullScreen: Bool {
+        let role = currentRole
+        let phase = currentPhase
+
+        // Active states:
+        // A can submit in awaitingASubmission; B approves in awaitingBApproval
+        // B can submit in awaitingBSubmission; A approves in awaitingAApproval
+        switch (role, phase) {
+        case ("A", .awaitingASubmission),
+             ("B", .awaitingBApproval),
+             ("B", .awaitingBSubmission),
+             ("A", .awaitingAApproval):
+            return false
+        case (_, .complete):
+            return false
+        default:
+            return true
+        }
+    }
+
+    private var waitingTitle: String {
+        "Waiting for your partner"
+    }
+
+    private var waitingMessageLong: String {
+        switch currentPhase {
+        case .awaitingASubmission:
+            return currentRole == "B" ? "Your partner is choosing times. Please look at their phone." : "Waiting…"
+        case .awaitingBApproval:
+            return currentRole == "A" ? "Waiting for your partner to confirm your proposal." : "Waiting…"
+        case .awaitingBSubmission:
+            return currentRole == "A" ? "Your partner is choosing times. Please look at their phone." : "Waiting…"
+        case .awaitingAApproval:
+            return currentRole == "B" ? "Waiting for your partner to confirm your proposal." : "Waiting…"
+        case .complete:
+            return "Setup complete."
+        }
     }
 
     // MARK: - Firestore ops
@@ -382,8 +455,9 @@ struct SharedSetupFlowView: View {
         }
     }
 
-    // Atomic submission: writes my answer + submitted true and advances phase depending on role
-    private func submitMyBlockProposal() async {
+    // MARK: - Step 1: Block schedule submission/approval (Transactional)
+
+    private func submitMyBlockProposal_TX() async {
         guard let ref = setupDocRef(), let uid else { return }
         isSaving = true
         defer { isSaving = false }
@@ -393,87 +467,283 @@ struct SharedSetupFlowView: View {
             "endMinutes": myDraftBlock.endMinutes
         ]
 
-        let phase = currentPhase
-        let role = currentRole
-
-        // Only allow:
-        // A submits when awaitingASubmission -> next awaitingBApproval
-        // B submits when awaitingBSubmission -> next awaitingAApproval
-        let nextPhase: SetupPhaseLocal?
-        if role == "A", phase == .awaitingASubmission {
-            nextPhase = .awaitingBApproval
-        } else if role == "B", phase == .awaitingBSubmission {
-            nextPhase = .awaitingAApproval
-        } else {
-            await MainActor.run { self.errorMessage = "You can’t submit at this time." }
-            return
-        }
-
-        guard let resolvedNext = nextPhase else { return }
+        let myRole = currentRole
 
         do {
-            try await ref.setData([
-                "answers.\(uid)": payload,
-                "submitted.\(uid)": true,
-                "phase": resolvedNext.rawValue,
-                "updatedAt": FieldValue.serverTimestamp()
-            ], merge: true)
+            try await db.runTransaction { txn, errorPtr in
+                do {
+                    let snap = try txn.getDocument(ref)
+                    guard var data = snap.data() else { return nil }
+
+                    let phaseRaw = (data["phase"] as? String) ?? SetupPhaseLocal.awaitingASubmission.rawValue
+                    guard let phase = SetupPhaseLocal(rawValue: phaseRaw) else { return nil }
+
+                    // Validate allowed submitter based on phase
+                    let canSubmitA = (myRole == "A" && phase == .awaitingASubmission)
+                    let canSubmitB = (myRole == "B" && phase == .awaitingBSubmission)
+                    guard canSubmitA || canSubmitB else {
+                        errorPtr?.pointee = NSError(domain: "whistl", code: 1, userInfo: [NSLocalizedDescriptionKey: "You can’t submit at this time."])
+                        return nil
+                    }
+
+                    // Write my answer and submitted flag
+                    var answers = (data["answers"] as? [String: Any]) ?? [:]
+                    answers[uid] = payload
+                    var submitted = (data["submitted"] as? [String: Bool]) ?? [:]
+                    submitted[uid] = true
+
+                    data["answers"] = answers
+                    data["submitted"] = submitted
+                    data["updatedAt"] = FieldValue.serverTimestamp()
+
+                    // Advance phase
+                    if canSubmitA {
+                        data["phase"] = SetupPhaseLocal.awaitingBApproval.rawValue
+                    } else if canSubmitB {
+                        data["phase"] = SetupPhaseLocal.awaitingAApproval.rawValue
+                    }
+
+                    txn.setData(data, forDocument: ref, merge: true)
+                    return nil
+                } catch {
+                    errorPtr?.pointee = error as NSError
+                    return nil
+                }
+            }
         } catch {
             await MainActor.run { self.errorMessage = (error as NSError).localizedDescription }
         }
     }
 
-    // Atomic approval: writes my approval true, persists partner proposal into approvedAnswers, and advances phase
-    private func approvePartnerProposalAndPersist() async {
+    private func approvePartnerProposal_TXCommon(nextPhase: SetupPhaseLocal, advanceToNextStep: Bool) async {
         guard let ref = setupDocRef(), let uid else { return }
         isSaving = true
         defer { isSaving = false }
 
-        let phase = currentPhase
-        let role = currentRole
-
-        // Determine partner uid and payload to persist
         let myUid = uid
-        let partnerEntry = setup.answers.first { $0.key != myUid }
-        let partnerUid = partnerEntry?.key
-        let partnerPayload = partnerEntry?.value
-
-        if partnerUid == nil || partnerPayload == nil {
-            await MainActor.run { self.errorMessage = "No partner proposal to approve yet." }
-            return
-        }
-
-        // Only allow:
-        // B approves when awaitingBApproval -> next awaitingBSubmission (persist A's proposal as approvedAnswers.A)
-        // A approves when awaitingAApproval -> next complete (persist B's proposal as approvedAnswers.B)
-        let nextPhase: SetupPhaseLocal?
-        var update: [String: Any] = [
-            "approvals.\(uid)": true,
-            "updatedAt": FieldValue.serverTimestamp()
-        ]
-
-        if role == "B", phase == .awaitingBApproval {
-            nextPhase = .awaitingBSubmission
-            update["phase"] = nextPhase!.rawValue
-            update["approvedAnswers.\(partnerUid!)"] = toPlainMap(partnerPayload!)
-        } else if role == "A", phase == .awaitingAApproval {
-            nextPhase = .complete
-            update["phase"] = nextPhase!.rawValue
-            update["approvedAnswers.\(partnerUid!)"] = toPlainMap(partnerPayload!)
-            update["completedAt"] = FieldValue.serverTimestamp()
-        } else {
-            await MainActor.run { self.errorMessage = "You can’t approve at this time." }
-            return
-        }
 
         do {
-            try await ref.setData(update, merge: true)
+            try await db.runTransaction { txn, errorPtr in
+                do {
+                    let snap = try txn.getDocument(ref)
+                    guard var data = snap.data() else { return nil }
+
+                    let phaseRaw = (data["phase"] as? String) ?? ""
+                    let current = SetupPhaseLocal(rawValue: phaseRaw)
+
+                    // Validate current phase matches what caller expects to approve
+                    let expectedPhase: SetupPhaseLocal = (nextPhase == .awaitingBSubmission) ? .awaitingBApproval :
+                                                         (nextPhase == .awaitingASubmission) ? .awaitingAApproval :
+                                                         (nextPhase == .complete) ? .awaitingAApproval : .awaitingASubmission
+
+                    guard current == expectedPhase else {
+                        errorPtr?.pointee = NSError(domain: "whistl", code: 2, userInfo: [NSLocalizedDescriptionKey: "Phase changed. Try again."])
+                        return nil
+                    }
+
+                    // Find partner entry
+                    let answers = (data["answers"] as? [String: Any]) ?? [:]
+                    guard let partnerEntry = answers.first(where: { key, _ in key != myUid }) else {
+                        errorPtr?.pointee = NSError(domain: "whistl", code: 3, userInfo: [NSLocalizedDescriptionKey: "No partner proposal to approve yet."])
+                        return nil
+                    }
+                    let partnerUid = partnerEntry.key
+                    let partnerPayload = partnerEntry.value as? [String: Any] ?? [:]
+
+                    // Approvals
+                    var approvals = (data["approvals"] as? [String: Bool]) ?? [:]
+                    approvals[myUid] = true
+                    data["approvals"] = approvals
+
+                    // Persist approved snapshot
+                    var approvedAnswers = (data["approvedAnswers"] as? [String: Any]) ?? [:]
+                    approvedAnswers[partnerUid] = partnerPayload
+                    data["approvedAnswers"] = approvedAnswers
+
+                    // Advance phase
+                    data["phase"] = nextPhase.rawValue
+                    data["updatedAt"] = FieldValue.serverTimestamp()
+
+                    // For mid-step switch (A approved -> B submit), reset my flags to allow B’s turn
+                    if nextPhase == .awaitingBSubmission || nextPhase == .awaitingASubmission {
+                        var submitted = (data["submitted"] as? [String: Bool]) ?? [:]
+                        submitted[myUid] = false
+                        data["submitted"] = submitted
+                        approvals[myUid] = false
+                        data["approvals"] = approvals
+                    }
+
+                    // If advancing to next setup step (appSelection), reset step-local fields
+                    if advanceToNextStep {
+                        data["step"] = SetupStepID.appSelection
+                        data["stepIndex"] = 1
+                        data["answers"] = [:]
+                        data["approvals"] = [:]
+                        data["submitted"] = [:]
+                    }
+
+                    // If finishing flow
+                    if nextPhase == .complete {
+                        data["completedAt"] = FieldValue.serverTimestamp()
+                    }
+
+                    txn.setData(data, forDocument: ref, merge: true)
+                    return nil
+                } catch {
+                    errorPtr?.pointee = error as NSError
+                    return nil
+                }
+            }
         } catch {
             await MainActor.run { self.errorMessage = (error as NSError).localizedDescription }
         }
     }
 
-    // Convert [String: AnyCodable] to [String: Any] for Firestore setData
+    private func approvePartnerProposal_TX() async {
+        // Determine correct next phase and whether we also advance to next step
+        let role = currentRole
+        let phase = currentPhase
+
+        if role == "B", phase == .awaitingBApproval {
+            // B approves A’s proposal -> next is B submission (still in blockSchedule step)
+            await approvePartnerProposal_TXCommon(nextPhase: .awaitingBSubmission, advanceToNextStep: false)
+        } else if role == "A", phase == .awaitingAApproval {
+            // A approves B’s proposal -> move to next step and reset to A submit
+            await approvePartnerProposal_TXCommon(nextPhase: .awaitingASubmission, advanceToNextStep: true)
+        } else {
+            await MainActor.run { self.errorMessage = "You can’t approve at this time." }
+        }
+    }
+
+    // MARK: - Step 2: App selection submission/approval (Transactional)
+
+    private func submitMyAppSelection_TX() async {
+        guard let ref = setupDocRef(), let uid else { return }
+        isSaving = true
+        defer { isSaving = false }
+
+        let payload = encodeSelectionToMap(myAppSelection)
+        let myRole = currentRole
+
+        do {
+            try await db.runTransaction { txn, errorPtr in
+                do {
+                    let snap = try txn.getDocument(ref)
+                    guard var data = snap.data() else { return nil }
+
+                    let phaseRaw = (data["phase"] as? String) ?? SetupPhaseLocal.awaitingASubmission.rawValue
+                    guard let phase = SetupPhaseLocal(rawValue: phaseRaw) else { return nil }
+
+                    let canSubmitA = (myRole == "A" && phase == .awaitingASubmission)
+                    let canSubmitB = (myRole == "B" && phase == .awaitingBSubmission)
+                    guard canSubmitA || canSubmitB else {
+                        errorPtr?.pointee = NSError(domain: "whistl", code: 4, userInfo: [NSLocalizedDescriptionKey: "You can’t submit at this time."])
+                        return nil
+                    }
+
+                    // Write my answer and submitted flag
+                    var answers = (data["answers"] as? [String: Any]) ?? [:]
+                    answers[uid] = payload
+                    var submitted = (data["submitted"] as? [String: Bool]) ?? [:]
+                    submitted[uid] = true
+
+                    data["answers"] = answers
+                    data["submitted"] = submitted
+                    data["updatedAt"] = FieldValue.serverTimestamp()
+
+                    // Advance phase
+                    if canSubmitA {
+                        data["phase"] = SetupPhaseLocal.awaitingBApproval.rawValue
+                    } else if canSubmitB {
+                        data["phase"] = SetupPhaseLocal.awaitingAApproval.rawValue
+                    }
+
+                    txn.setData(data, forDocument: ref, merge: true)
+                    return nil
+                } catch {
+                    errorPtr?.pointee = error as NSError
+                    return nil
+                }
+            }
+        } catch {
+            await MainActor.run { self.errorMessage = (error as NSError).localizedDescription }
+        }
+    }
+
+    private func approvePartnerSelection_TX() async {
+        guard let ref = setupDocRef(), let uid else { return }
+        isSaving = true
+        defer { isSaving = false }
+
+        let myUid = uid
+        let role = currentRole
+        let phase = currentPhase
+
+        do {
+            try await db.runTransaction { txn, errorPtr in
+                do {
+                    let snap = try txn.getDocument(ref)
+                    guard var data = snap.data() else { return nil }
+
+                    let phaseRaw = (data["phase"] as? String) ?? ""
+                    guard let current = SetupPhaseLocal(rawValue: phaseRaw) else { return nil }
+
+                    // Expected phase for approver
+                    let expected: SetupPhaseLocal = (role == "B") ? .awaitingBApproval : .awaitingAApproval
+                    guard current == expected else {
+                        errorPtr?.pointee = NSError(domain: "whistl", code: 5, userInfo: [NSLocalizedDescriptionKey: "Phase changed. Try again."])
+                        return nil
+                    }
+
+                    // Partner entry
+                    let answers = (data["answers"] as? [String: Any]) ?? [:]
+                    guard let partnerEntry = answers.first(where: { key, _ in key != myUid }) else {
+                        errorPtr?.pointee = NSError(domain: "whistl", code: 6, userInfo: [NSLocalizedDescriptionKey: "No partner selection to approve yet."])
+                        return nil
+                    }
+                    let partnerUid = partnerEntry.key
+                    let partnerPayload = partnerEntry.value as? [String: Any] ?? [:]
+
+                    // Approvals
+                    var approvals = (data["approvals"] as? [String: Bool]) ?? [:]
+                    approvals[myUid] = true
+                    data["approvals"] = approvals
+
+                    // Snapshot approved selection
+                    var approvedAnswers = (data["approvedAnswers"] as? [String: Any]) ?? [:]
+                    approvedAnswers[partnerUid] = partnerPayload
+                    data["approvedAnswers"] = approvedAnswers
+
+                    // Advance phase
+                    if role == "B", phase == .awaitingBApproval {
+                        // Move to B submission
+                        data["phase"] = SetupPhaseLocal.awaitingBSubmission.rawValue
+                        // Reset my flags for next turn
+                        var submitted = (data["submitted"] as? [String: Bool]) ?? [:]
+                        submitted[myUid] = false
+                        data["submitted"] = submitted
+                        approvals[myUid] = false
+                        data["approvals"] = approvals
+                    } else if role == "A", phase == .awaitingAApproval {
+                        // Finish
+                        data["phase"] = SetupPhaseLocal.complete.rawValue
+                        data["completedAt"] = FieldValue.serverTimestamp()
+                    }
+
+                    data["updatedAt"] = FieldValue.serverTimestamp()
+                    txn.setData(data, forDocument: ref, merge: true)
+                    return nil
+                } catch {
+                    errorPtr?.pointee = error as NSError
+                    return nil
+                }
+            }
+        } catch {
+            await MainActor.run { self.errorMessage = (error as NSError).localizedDescription }
+        }
+    }
+
+    // Convert [String: AnyCodable] to [String: Any] for Firestore setData (kept for completeness)
     private func toPlainMap(_ dict: [String: AnyCodable]) -> [String: Any] {
         var out: [String: Any] = [:]
         for (k, v) in dict {
@@ -491,6 +761,87 @@ struct SharedSetupFlowView: View {
             }
         }
         return out
+    }
+
+    // MARK: - Selection encoding/decoding for Firestore
+
+    private func encodeSelectionToMap(_ sel: FamilyActivitySelection) -> [String: Any] {
+        let encoder = JSONEncoder()
+        let appBase64: [String] = sel.applicationTokens.compactMap { token in
+            guard let data = try? encoder.encode(token) else { return nil }
+            return data.base64EncodedString()
+        }
+        let catBase64: [String] = sel.categoryTokens.compactMap { token in
+            guard let data = try? encoder.encode(token) else { return nil }
+            return data.base64EncodedString()
+        }
+        return [
+            "appTokens": appBase64,
+            "categoryTokens": catBase64
+        ]
+    }
+
+    private func decodeSelectionFromMap(_ map: [String: AnyCodable]?) -> FamilyActivitySelection {
+        var sel = FamilyActivitySelection()
+        guard let map else { return sel }
+        let decoder = JSONDecoder()
+        if let appArr = map["appTokens"]?.value as? [Any] {
+            let tokens: [ApplicationToken] = appArr.compactMap { any in
+                guard let s = any as? String, let data = Data(base64Encoded: s) else { return nil }
+                return try? decoder.decode(ApplicationToken.self, from: data)
+            }
+            sel.applicationTokens = Set(tokens)
+        }
+        if let catArr = map["categoryTokens"]?.value as? [Any] {
+            let tokens: [ActivityCategoryToken] = catArr.compactMap { any in
+                guard let s = any as? String, let data = Data(base64Encoded: s) else { return nil }
+                return try? decoder.decode(ActivityCategoryToken.self, from: data)
+            }
+            sel.categoryTokens = Set(tokens)
+        }
+        return sel
+    }
+
+    private func unionApprovedSelections() -> FamilyActivitySelection {
+        var union = FamilyActivitySelection()
+        // Merge all approvedAnswers payloads
+        for (_, payload) in setup.approvedAnswers {
+            let sel = decodeSelectionFromMap(payload)
+            union.applicationTokens.formUnion(sel.applicationTokens)
+            union.categoryTokens.formUnion(sel.categoryTokens)
+        }
+        return union
+    }
+
+    // MARK: - Finalization: persist approved config
+
+    private func persistApprovedConfiguration() {
+        // Persist the last approved block schedule if available (replicate across week via legacy bridge)
+        // We use the last approved block payload present in approvedAnswers (if any).
+        let approvedBlocks: [BlockSchedule] = setup.approvedAnswers.values.compactMap { payload in
+            // Try parse as schedule payload first (may not exist in appSelection step)
+            let start = (payload["startMinutes"]?.value as? Int)
+            let end = (payload["endMinutes"]?.value as? Int)
+            if let s = start, let e = end {
+                return BlockSchedule(startMinutes: s, endMinutes: e)
+            }
+            return nil
+        }
+        if let last = approvedBlocks.last {
+            SharedConfigStore.save(startMinutes: last.startMinutes, endMinutes: last.endMinutes)
+            SharedConfigStore.save(isScheduleEnabled: true)
+        } else {
+            // If no schedule found (shouldn't happen if step 1 completed), keep defaults.
+            SharedConfigStore.save(isScheduleEnabled: true)
+        }
+
+        // Persist union of approved app selections
+        let selection = unionApprovedSelections()
+        SharedConfigStore.save(selection: selection)
+
+        // Notify extension and DeviceActivity monitoring
+        postConfigDidChangeDarwinNotification()
+        ReportingScheduler.shared.refreshMonitoringFromShared()
     }
 }
 
@@ -661,13 +1012,6 @@ private struct BlockScheduleStepView: View {
                 } else if phase == .complete {
                     Label("Completed", systemImage: "checkmark.circle.fill")
                         .foregroundStyle(.green)
-                } else {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                        Text(waitingMessage)
-                            .font(.footnote)
-                            .foregroundStyle(brand.secondaryText)
-                    }
                 }
             }
         }
@@ -680,21 +1024,6 @@ private struct BlockScheduleStepView: View {
             return "Pick a time range and submit to share with your partner."
         } else {
             return "Waiting for your partner to choose…"
-        }
-    }
-
-    private var waitingMessage: String {
-        switch phase {
-        case .awaitingASubmission:
-            return role == "B" ? "Waiting for your partner to submit…" : "Waiting…"
-        case .awaitingBApproval:
-            return role == "A" ? "Waiting for your partner to approve…" : "Waiting…"
-        case .awaitingBSubmission:
-            return role == "A" ? "Waiting for your partner to submit…" : "Waiting…"
-        case .awaitingAApproval:
-            return role == "B" ? "Waiting for your partner to approve…" : "Waiting…"
-        case .complete:
-            return "Completed"
         }
     }
 
@@ -837,9 +1166,41 @@ private struct TimeRangePicker: View {
     }
 }
 
+// A full-screen waiting card for the non-active device
+private struct WaitingFullScreen: View {
+    let title: String
+    let message: String
+    let brand: BrandPalette
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            Image(systemName: "hourglass")
+                .font(.system(size: 40, weight: .bold))
+                .foregroundStyle(brand.accent)
+            Text(title)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(.primary)
+            Text(message)
+                .multilineTextAlignment(.center)
+                .font(.callout)
+                .foregroundStyle(brand.secondaryText)
+                .padding(.horizontal, 16)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(brand.fieldBackground)
+        )
+    }
+}
+
 private struct AppSelectionStepView: View {
     var myApproved: Bool
     var partnerApproved: Bool
+    var onSubmit: () -> Void
     var onApprove: () -> Void
     var isSaving: Bool
     let brand: BrandPalette
@@ -847,27 +1208,48 @@ private struct AppSelectionStepView: View {
     let role: String
     let phase: SetupPhaseLocal
 
+    @Binding var selection: FamilyActivitySelection
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Which apps should be blocked?")
                 .font(.headline)
                 .foregroundStyle(.primary)
 
-            Text("App selection UI goes here (list of installed apps, suggested gambling apps, etc.).")
+            Text("Choose categories and apps below. Submit your selection, then your partner will approve it.")
                 .foregroundStyle(brand.secondaryText)
                 .font(.footnote)
 
-            if role == "A", phase == .awaitingAApproval {
-                PrimaryActionButton(title: "Approve partner’s selection", isLoading: isSaving, brand: brand, action: onApprove)
-            } else if phase == .complete {
-                Label("Completed", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-            } else {
-                HStack(spacing: 8) {
-                    ProgressView()
-                    Text("Waiting…")
-                        .font(.footnote)
-                        .foregroundStyle(brand.secondaryText)
+            // Minimal inline summary; full picker is in FocusMenu elsewhere
+            HStack {
+                Text(summary)
+                    .font(.callout)
+                    .foregroundStyle(brand.secondaryText)
+                Spacer()
+                Button {
+                    // Placeholder: selection editing is handled in FocusMenu for now.
+                } label: {
+                    Text("Edit selection")
+                }
+                .buttonStyle(.bordered)
+                .disabled(true)
+            }
+
+            Divider().opacity(0.2)
+
+            // Actions based on role/phase
+            VStack(alignment: .leading, spacing: 8) {
+                if role == "A", phase == .awaitingASubmission {
+                    PrimaryActionButton(title: "Submit your selection", isLoading: isSaving, brand: brand, action: onSubmit)
+                } else if role == "B", phase == .awaitingBApproval {
+                    PrimaryActionButton(title: "Approve partner’s selection", isLoading: isSaving, brand: brand, action: onApprove)
+                } else if role == "B", phase == .awaitingBSubmission {
+                    PrimaryActionButton(title: "Submit your selection", isLoading: isSaving, brand: brand, action: onSubmit)
+                } else if role == "A", phase == .awaitingAApproval {
+                    PrimaryActionButton(title: "Approve partner’s selection", isLoading: isSaving, brand: brand, action: onApprove)
+                } else if phase == .complete {
+                    Label("Completed", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
                 }
             }
         }
@@ -876,5 +1258,15 @@ private struct AppSelectionStepView: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(brand.fieldBackground)
         )
+    }
+
+    private var summary: String {
+        let apps = selection.applicationTokens.count
+        let cats = selection.categoryTokens.count
+        if apps == 0 && cats == 0 { return "No selection yet." }
+        var parts: [String] = []
+        if apps > 0 { parts.append("\(apps) app\(apps == 1 ? "" : "s")") }
+        if cats > 0 { parts.append("\(cats) categor\(cats == 1 ? "y" : "ies")") }
+        return parts.joined(separator: " + ")
     }
 }

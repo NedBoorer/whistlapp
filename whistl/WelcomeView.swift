@@ -26,15 +26,10 @@ struct WelcomeView: View {
                     .accessibilityLabel("whistl")
                     .accessibilityAddTraits(.isHeader)
 
-                Text("Welcome to whistl")
+                Text("Welcome mate")
                     .font(.title2.weight(.semibold))
                     .foregroundStyle(brand.primaryText)
 
-                Text("Private, shared space for two. Let’s get you set up.")
-                    .font(.callout)
-                    .foregroundStyle(brand.secondaryText)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 24)
 
                 NavigationLink {
                     // Route to Authview so users can choose Sign in or Create account
