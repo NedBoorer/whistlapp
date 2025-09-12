@@ -2,8 +2,6 @@
 //  SplashView.swift
 //  whistl
 //
-//  Created by Ned Boorer on 12/9/2025.
-//
 
 import SwiftUI
 
@@ -18,7 +16,6 @@ struct SplashView: View {
         ZStack {
             brand.background()
 
-            // Reuse the same stylized text logo look as Authview.LogoView
             Text("whistl")
                 .font(.system(size: 44, weight: .heavy, design: .rounded))
                 .kerning(1.0)
@@ -32,20 +29,14 @@ struct SplashView: View {
         }
         .onAppear {
             animate = true
-            // Keep the splash briefly to cover Firebase/auth init and provide a smooth feel.
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
                 guard !hasFinished else { return }
                 hasFinished = true
                 onFinished()
             }
         }
-        .onDisappear {
-            animate = false
-        }
+        .onDisappear { animate = false }
     }
 }
 
-#Preview {
-    SplashView(onFinished: {})
-}
-
+#Preview { SplashView(onFinished: {}) }

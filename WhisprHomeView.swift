@@ -1,6 +1,7 @@
 import SwiftUI
 import FamilyControls
 import ManagedSettings
+import FirebaseAuth
 
 struct WhisprHomeView: View {
     @Environment(AppController.self) private var appController
@@ -19,7 +20,7 @@ struct WhisprHomeView: View {
 
     private let missionLine = "Stop gambling together — Australians lose over $25B each year. With whistl, mates keep each other on track."
 
-    // Access schedule VM for break control and status
+    // Schedule/Shield VM
     @State private var model = FocusScheduleViewModel()
 
     var body: some View {
@@ -36,7 +37,8 @@ struct WhisprHomeView: View {
 
                     attemptsCard
 
-                    breakControls
+                    partnerBreakControls
+                    requestBreakControls
 
                     // Open your blocking controls
                     NavigationLink {
@@ -51,7 +53,7 @@ struct WhisprHomeView: View {
                     .tint(brand.accent)
                     .padding(.top, 4)
 
-                    // New: Open Screen Time report (Device Activity report extension)
+                    // Screen Time report
                     Button {
                         showingReport = true
                     } label: {
@@ -62,7 +64,7 @@ struct WhisprHomeView: View {
                     .buttonStyle(.bordered)
                     .tint(brand.accent)
 
-                    // Inline logout button (optional, in addition to toolbar item)
+                    // Logout
                     Button {
                         do { try appController.signOut() } catch { }
                     } label: {
@@ -97,14 +99,35 @@ struct WhisprHomeView: View {
                 .tint(brand.accent)
         }
         .onAppear {
+            // Inject pairing context into VM
+            model.updatePairContext(
+                pairId: appController.pairId,
+                myUID: Auth.auth().currentUser?.uid,
+                partnerUID: appController.partnerUID
+            )
             refreshAnalytics()
             startTicker()
+        }
+        .onChange(of: appController.pairId) { _ in
+            model.updatePairContext(
+                pairId: appController.pairId,
+                myUID: Auth.auth().currentUser?.uid,
+                partnerUID: appController.partnerUID
+            )
+        }
+        .onChange(of: appController.partnerUID) { _ in
+            model.updatePairContext(
+                pairId: appController.pairId,
+                myUID: Auth.auth().currentUser?.uid,
+                partnerUID: appController.partnerUID
+            )
         }
         .onDisappear {
             stopTicker()
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
             refreshAnalytics()
+            model.evaluateAndApplyShield()
         }
         .tint(brand.accent)
     }
@@ -183,10 +206,64 @@ struct WhisprHomeView: View {
         )
     }
 
-    // New: Break controls
-    private var breakControls: some View {
+    // Partner-controlled break controls (approve partner's request and grant break)
+    private var partnerBreakControls: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("Short break", systemImage: "pause.circle")
+            Label("Partner requests", systemImage: "bell.and.waves.left.and.right")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(brand.accent)
+
+            if model.hasPendingPartnerRequest {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Your partner requested a 5‑minute break.")
+                        .font(.callout)
+
+                    HStack {
+                        Button {
+                            Task {
+                                await model.grantFiveMinuteBreakToPartner()
+                            }
+                        } label: {
+                            Label("Approve and grant break", systemImage: "checkmark.circle.fill")
+                                .fontWeight(.semibold)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(brand.accent)
+
+                        Button(role: .destructive) {
+                            Task { await model.rejectPartnerBreakRequest() }
+                        } label: {
+                            Label("Reject", systemImage: "xmark.circle")
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(brand.fieldBackground)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(brand.cardStroke, lineWidth: 1)
+                )
+            } else {
+                Text("No pending requests from your partner.")
+                    .font(.footnote)
+                    .foregroundStyle(brand.secondaryText)
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(brand.fieldBackground)
+        )
+    }
+
+    // Owner-facing request controls (request a break and show pending)
+    private var requestBreakControls: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Request a break", systemImage: "paperplane.circle")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(brand.accent)
 
@@ -199,37 +276,47 @@ struct WhisprHomeView: View {
                     Button {
                         model.cancelBreak()
                     } label: {
-                        Text("Cancel break")
+                        Text("Cancel my break")
                             .fontWeight(.semibold)
+                    }
+                    .buttonStyle(.bordered)
+                }
+            } else if model.isMyBreakRequestPending {
+                HStack {
+                    Image(systemName: "paperplane")
+                    Text("Request sent — waiting for your partner to approve")
+                        .font(.callout)
+                    Spacer()
+                    Button(role: .destructive) {
+                        Task { await model.cancelBreakRequest() }
+                    } label: {
+                        Text("Cancel request")
                     }
                     .buttonStyle(.bordered)
                 }
             } else {
                 Button {
-                    model.startFiveMinuteBreak()
+                    Task { await model.requestBreak() }
                 } label: {
-                    Label("Take 5‑minute break", systemImage: "playpause.fill")
+                    Label("Request 5‑minute break", systemImage: "paperplane.fill")
                         .frame(maxWidth: .infinity)
                         .fontWeight(.semibold)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(brand.accent)
-                .disabled(!model.isAuthorized) // needs Screen Time permission to control shield
+                .buttonStyle(.bordered)
+                .disabled(!(appController.isPaired && appController.partnerUID != nil))
             }
 
-            Text("Pauses blocking for five minutes. Use sparingly — your mate’s counting on you.")
-                .font(.footnote)
-                .foregroundStyle(brand.secondaryText)
+            if let err = model.lastBreakRequestError {
+                Label(err, systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                    .font(.footnote)
+            }
         }
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(brand.fieldBackground)
         )
-        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
-            // Refresh pause state when returning to foreground
-            model.evaluateAndApplyShield()
-        }
     }
 
     private var breakCountdownText: String {
@@ -238,6 +325,11 @@ struct WhisprHomeView: View {
         let m = remaining / 60
         let s = remaining % 60
         return String(format: "Break ends in %d:%02d", m, s)
+    }
+
+    private var partnerDisplayName: String? {
+        // If you later cache partner’s name in AppController, return it here.
+        return "your partner"
     }
 
     private var displayName: String {
@@ -257,7 +349,7 @@ struct WhisprHomeView: View {
             if item.identifier.lowercased().contains("gambling") { return "Gambling (category)" }
             return "Category (\(item.identifier))"
         } else {
-            return item.identifier // best-effort; token descriptions
+            return item.identifier
         }
     }
 

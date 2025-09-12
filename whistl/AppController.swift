@@ -51,6 +51,9 @@ class AppController {
     var isMemberA: Bool = false
     var isMemberB: Bool = false
 
+    // Partner UID cached (derived from pair doc)
+    var partnerUID: String? = nil
+
     private var db: Firestore { Firestore.firestore() }
 
     @MainActor
@@ -66,6 +69,7 @@ class AppController {
                 self.pairingLoadState = .unknown
                 self.isMemberA = false
                 self.isMemberB = false
+                self.partnerUID = nil
                 return
             }
 
@@ -75,6 +79,7 @@ class AppController {
             self.pairingLoadState = .loading
             self.isMemberA = false
             self.isMemberB = false
+            self.partnerUID = nil
 
             Task {
                 let ok = await self.loadUserProfile(uid: user.uid)
@@ -126,6 +131,7 @@ class AppController {
             self.pairingLoadState = .unknown
             self.isMemberA = false
             self.isMemberB = false
+            self.partnerUID = nil
         }
     }
 
@@ -178,11 +184,14 @@ class AppController {
                 self.pairingLoadState = finalized ? .paired : .unpaired
                 // Resolve role if possible
                 await self.resolveRoleForCurrentUser(pairId: pid, uid: uid)
+                // Also resolve partner UID
+                await self.resolvePartnerUID(pairId: pid, uid: uid)
             } else {
                 self.pairId = nil
                 self.pairingLoadState = .unpaired
                 self.isMemberA = false
                 self.isMemberB = false
+                self.partnerUID = nil
             }
             return true
         } catch {
@@ -190,6 +199,7 @@ class AppController {
             self.pairingLoadState = .unpaired
             self.isMemberA = false
             self.isMemberB = false
+            self.partnerUID = nil
             return false
         }
     }
@@ -209,6 +219,7 @@ class AppController {
                     let finalized = await self.isPairFinalized(pairId: pid)
                     self.pairingLoadState = finalized ? .paired : .unpaired
                     await self.resolveRoleForCurrentUser(pairId: pid, uid: uid)
+                    await self.resolvePartnerUID(pairId: pid, uid: uid)
                     // Ensure setup doc exists when finalized
                     if finalized {
                         await self.ensureInitialSetupPhase(pairId: pid)
@@ -218,6 +229,7 @@ class AppController {
                     self.pairingLoadState = .unpaired
                     self.isMemberA = false
                     self.isMemberB = false
+                    self.partnerUID = nil
                 }
             }
         }
@@ -270,6 +282,7 @@ class AppController {
             // Creator is memberA by definition
             self.isMemberA = true
             self.isMemberB = false
+            self.partnerUID = nil
         }
     }
 
@@ -324,6 +337,7 @@ class AppController {
                     "answers": [:],
                     "approvals": [:],
                     "submitted": [:],
+                    "approvedAnswers": [:],
                     "phase": SetupPhase.awaitingASubmission.rawValue,
                     "updatedAt": FieldValue.serverTimestamp()
                 ], forDocument: setupRef, merge: true)
@@ -342,6 +356,7 @@ class AppController {
             self.pairingLoadState = .paired
             self.isMemberA = false
             self.isMemberB = true
+            await self.resolvePartnerUID(pairId: pairRef.documentID, uid: uid)
         }
     }
 
@@ -380,6 +395,7 @@ class AppController {
                     "answers": [:],
                     "approvals": [:],
                     "submitted": [:],
+                    "approvedAnswers": [:],
                     "phase": SetupPhase.awaitingASubmission.rawValue,
                     "updatedAt": FieldValue.serverTimestamp()
                 ])
@@ -405,6 +421,22 @@ class AppController {
                 self.isMemberA = false
                 self.isMemberB = false
             }
+        }
+    }
+
+    // Resolve partner UID from pairs/{pairId}
+    func resolvePartnerUID(pairId: String, uid: String) async {
+        do {
+            let snap = try await pairsCollection.document(pairId).getDocument()
+            guard let data = snap.data() else { return }
+            let memberA = data["memberA"] as? String
+            let memberB = data["memberB"] as? String
+            let partner = (memberA == uid) ? memberB : memberA
+            await MainActor.run {
+                self.partnerUID = partner
+            }
+        } catch {
+            await MainActor.run { self.partnerUID = nil }
         }
     }
 
