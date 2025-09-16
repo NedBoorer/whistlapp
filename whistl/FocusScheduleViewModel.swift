@@ -58,6 +58,7 @@ struct WeeklyBlockPlan: Codable, Equatable {
     }
 
     static func replicated(startMinutes: Int, endMinutes: Int) -> WeeklyBlockPlan {
+        // startMinutes and endMinutes may cross midnight; enforcement supports wrap-around windows.
         let tr = TimeRange(startMinutes: startMinutes, endMinutes: endMinutes)
         return WeeklyBlockPlan(days: Weekday.allCases.map { DaySchedule(weekday: $0, enabled: true, ranges: [tr]) })
     }
@@ -117,6 +118,7 @@ final class FocusScheduleViewModel {
     private var policyListener: ListenerRegistration?
     private var myRequestListener: ListenerRegistration?
     private var partnerRequestListener: ListenerRegistration?
+    private var partnerAttemptListener: ListenerRegistration?
 
     private let db = Firestore.firestore()
 
@@ -133,12 +135,16 @@ final class FocusScheduleViewModel {
         startScheduler()
         observeScenePhase()
 
+        // Ensure we have permission before scheduling local notifications for partner requests/attempts
+        WhistlNotifier.requestAuthorizationIfNeeded()
+
         // Sync reporting
         ReportingScheduler.shared.refreshMonitoringFromShared()
 
         // Attach listeners if we have enough context
         attachPolicyListenerIfPossible()
         attachBreakRequestListenersIfPossible()
+        attachPartnerAttemptListenerIfPossible()
     }
 
     deinit {
@@ -150,6 +156,8 @@ final class FocusScheduleViewModel {
         myRequestListener = nil
         partnerRequestListener?.remove()
         partnerRequestListener = nil
+        partnerAttemptListener?.remove()
+        partnerAttemptListener = nil
         if let obs = scenePhaseObservation {
             NotificationCenter.default.removeObserver(obs)
         }
@@ -161,8 +169,12 @@ final class FocusScheduleViewModel {
         self.pairId = pairId
         self.myUID = myUID
         self.partnerUID = partnerUID
+        // Persist to shared storage for the Shield Action Extension
+        SharedConfigStore.savePairContext(pairId: pairId, myUID: myUID, partnerUID: partnerUID)
+        SharedConfigStore.setAttemptLogging(enabled: true)
         attachPolicyListenerIfPossible()
         attachBreakRequestListenersIfPossible()
+        attachPartnerAttemptListenerIfPossible()
     }
 
     private func attachPolicyListenerIfPossible() {
@@ -233,6 +245,28 @@ final class FocusScheduleViewModel {
                 }
             }
         }
+    }
+
+    // Listen for partner blocked attempts and notify this device
+    private func attachPartnerAttemptListenerIfPossible() {
+        partnerAttemptListener?.remove()
+        partnerAttemptListener = nil
+        guard let pid = pairId, let partner = partnerUID, !pid.isEmpty, !partner.isEmpty else { return }
+        let attemptsRef = db.collection("pairSpaces").document(pid).collection("attempts")
+        // Only listen to partner's attempts and only new ones
+        partnerAttemptListener = attemptsRef
+            .whereField("ownerUID", isEqualTo: partner)
+            .order(by: "createdAt", descending: true)
+            .limit(to: 1)
+            .addSnapshotListener { [weak self] snapshot, _ in
+                guard let self else { return }
+                guard let change = snapshot?.documentChanges.first, change.type == .added else { return }
+                // Schedule a local notification
+                WhistlNotifier.scheduleAttemptNotification(
+                    title: "Blocked attempt",
+                    body: "Your partner tried to open a blocked app."
+                )
+            }
     }
 
     // MARK: - Authorization
@@ -355,6 +389,24 @@ final class FocusScheduleViewModel {
         notifyExtension()
         evaluateAndApplyShield()
         ReportingScheduler.shared.refreshMonitoringFromShared()
+    }
+
+    // MARK: - Attempts: write to Firestore and notify partner
+
+    // Call this from your Shield Action Extension when a user taps a blocked app/category.
+    func recordAttempt(kind: String, identifierHash: String) async {
+        guard let pid = pairId, let owner = myUID, !pid.isEmpty, !owner.isEmpty else { return }
+        let ref = db.collection("pairSpaces").document(pid).collection("attempts").document()
+        do {
+            try await ref.setData([
+                "kind": kind,                 // "app" or "category"
+                "identifierHash": identifierHash,
+                "ownerUID": owner,
+                "createdAt": FieldValue.serverTimestamp()
+            ])
+        } catch {
+            // Best-effort; ignore errors
+        }
     }
 
     // MARK: - Break control (partner-granted + request/approve)
@@ -688,3 +740,4 @@ final class FocusScheduleViewModel {
         postConfigDidChangeDarwinNotification()
     }
 }
+

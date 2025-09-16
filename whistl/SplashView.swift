@@ -16,7 +16,7 @@ struct SplashView: View {
         ZStack {
             brand.background()
 
-            Text("whistl")
+            Text("baura")
                 .font(.system(size: 44, weight: .heavy, design: .rounded))
                 .kerning(1.0)
                 .foregroundStyle(brand.primaryGradient())
@@ -24,7 +24,7 @@ struct SplashView: View {
                 .scaleEffect(animate ? 1.06 : 0.94)
                 .opacity(animate ? 1.0 : 0.92)
                 .animation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true), value: animate)
-                .accessibilityLabel("whistl")
+                .accessibilityLabel("baura")
                 .accessibilityAddTraits(.isHeader)
         }
         .onAppear {
@@ -41,4 +41,3 @@ struct SplashView: View {
 }
 
 #Preview { SplashView(onFinished: {}) }
-

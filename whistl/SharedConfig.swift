@@ -32,6 +32,17 @@ public enum SharedKeys {
 
     // Pause/break
     public static let pauseUntil            = "fc_pauseUntil_v1"           // Date when pause ends
+
+    // Pair context for extensions
+    public static let pairId                = "pair_id_v1"
+    public static let myUID                 = "pair_my_uid_v1"
+    public static let partnerUID            = "pair_partner_uid_v1"
+
+    // Attempt logging toggle (extensions can check)
+    public static let attemptLoggingEnabled = "attempt_logging_enabled_v1"
+
+    // Cache of observed app names keyed by token hash string
+    public static let appNameCache          = "app_name_cache_v1"          // [String: String]
 }
 
 // MARK: - Shared Storage
@@ -126,6 +137,39 @@ public struct SharedConfigStore {
         }
         return false
     }
+
+    // Pair context for extensions
+    public static func savePairContext(pairId: String?, myUID: String?, partnerUID: String?) {
+        if let pairId { defaults.set(pairId, forKey: SharedKeys.pairId) } else { defaults.removeObject(forKey: SharedKeys.pairId) }
+        if let myUID { defaults.set(myUID, forKey: SharedKeys.myUID) } else { defaults.removeObject(forKey: SharedKeys.myUID) }
+        if let partnerUID { defaults.set(partnerUID, forKey: SharedKeys.partnerUID) } else { defaults.removeObject(forKey: SharedKeys.partnerUID) }
+    }
+
+    public static func loadPairContext() -> (pairId: String?, myUID: String?, partnerUID: String?) {
+        let pid = defaults.string(forKey: SharedKeys.pairId)
+        let my = defaults.string(forKey: SharedKeys.myUID)
+        let partner = defaults.string(forKey: SharedKeys.partnerUID)
+        return (pid, my, partner)
+    }
+
+    public static func setAttemptLogging(enabled: Bool) {
+        defaults.set(enabled, forKey: SharedKeys.attemptLoggingEnabled)
+    }
+    public static func isAttemptLoggingEnabled() -> Bool {
+        defaults.bool(forKey: SharedKeys.attemptLoggingEnabled)
+    }
+
+    // App name cache
+    public static func cacheAppName(hashKey: String, name: String) {
+        var dict = (defaults.dictionary(forKey: SharedKeys.appNameCache) as? [String: String]) ?? [:]
+        dict[hashKey] = name
+        defaults.set(dict, forKey: SharedKeys.appNameCache)
+    }
+
+    public static func appName(for hashKey: String) -> String? {
+        let dict = (defaults.dictionary(forKey: SharedKeys.appNameCache) as? [String: String]) ?? [:]
+        return dict[hashKey]
+    }
 }
 
 // MARK: - Analytics (Attempts + Blocked time)
@@ -145,13 +189,11 @@ public struct AttemptEvent: Codable, Equatable {
 public enum AnalyticsStore {
     // Append an attempt event
     public static func logAttempt(for application: ApplicationToken) {
-        // ApplicationTokens are opaque for privacy - use a generic identifier
         let identifier = "app_\(application.hashValue)"
         appendAttempt(kind: "app", identifier: identifier)
     }
 
     public static func logAttempt(for category: ActivityCategoryToken) {
-        // ActivityCategoryTokens are opaque for privacy - use a generic identifier
         let identifier = "category_\(category.hashValue)"
         appendAttempt(kind: "category", identifier: identifier)
     }
@@ -203,7 +245,6 @@ public enum AnalyticsStore {
 
     // Blocked time accumulation (seconds) keyed by yyyy-MM-dd
     public static func markShieldActivated(now: Date = Date(), calendar: Calendar = .current) {
-        // If already active, ignore
         if SharedConfigStore.defaults.object(forKey: SharedKeys.currentBlockStart) as? Date != nil { return }
         SharedConfigStore.defaults.set(now, forKey: SharedKeys.currentBlockStart)
     }
@@ -215,17 +256,14 @@ public enum AnalyticsStore {
         accumulate(seconds: seconds, at: start, calendar: calendar)
     }
 
-    // Should be called periodically if a block spans midnight or app relaunch
     public static func finalizeIfDayRolledOver(now: Date = Date(), calendar: Calendar = .current) {
         guard let start = SharedConfigStore.defaults.object(forKey: SharedKeys.currentBlockStart) as? Date else { return }
         let startDay = calendar.startOfDay(for: start)
         let today = calendar.startOfDay(for: now)
         guard today > startDay else { return }
-        // Accumulate up to 23:59:59 of the start day
         if let endOfStartDay = calendar.date(byAdding: DateComponents(day: 1, second: -1), to: startDay) {
             let seconds = max(0, endOfStartDay.timeIntervalSince(start))
             accumulate(seconds: seconds, at: start, calendar: calendar)
-            // Restart block at beginning of today
             SharedConfigStore.defaults.set(today, forKey: SharedKeys.currentBlockStart)
         }
     }
@@ -235,7 +273,6 @@ public enum AnalyticsStore {
         let key = dayKey(for: now, calendar: calendar)
         let dict = (SharedConfigStore.defaults.dictionary(forKey: SharedKeys.blockedAccumulations) as? [String: Double]) ?? [:]
         var total = Int(dict[key] ?? 0)
-        // If currently blocking, add delta since start
         if let currentStart = SharedConfigStore.defaults.object(forKey: SharedKeys.currentBlockStart) as? Date {
             let startOfToday = calendar.startOfDay(for: now)
             let effectiveStart = max(currentStart, startOfToday)

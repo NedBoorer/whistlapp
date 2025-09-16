@@ -30,7 +30,6 @@ struct WelcomeView: View {
                     .font(.title2.weight(.semibold))
                     .foregroundStyle(brand.primaryText)
 
-
                 NavigationLink {
                     // Route to Authview so users can choose Sign in or Create account
                     Authview()

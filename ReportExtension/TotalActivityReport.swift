@@ -9,6 +9,7 @@ import DeviceActivity
 import ExtensionKit
 import SwiftUI
 import ManagedSettings
+import FamilyControls
 
 // MARK: - Contexts supported by your reports
 
@@ -87,6 +88,21 @@ struct TotalActivityWidgetReport: Hashable {
     let topAppMinutes: Double
 }
 
+// MARK: - Helpers: filter by blocked selection
+
+private func blockedSelection() -> (apps: Set<String>, categories: Set<String>) {
+    // We only have opaque tokens in SharedConfig; for apps we can't map bundle IDs here.
+    // So we filter by category display names only, or include all apps (since we can’t match tokens).
+    // As a pragmatic fix, we will NOT filter apps by token, but we will filter categories by name if the selection is empty (no categories selected -> show all).
+    // If you prefer, you can store bundleIdentifiers in SharedConfig alongside tokens when the user selects them (requires changes elsewhere).
+    let sel = SharedConfigStore.loadSelection()
+    // We can’t decode bundle IDs from ApplicationToken, so app filtering is not possible here without additional storage.
+    let apps: Set<String> = []
+    // For categories, DeviceActivity gives localizedDisplayName; we can’t map from ActivityCategoryToken to name reliably either.
+    // Therefore, we will not filter categories either, but we will still show totals. If you need “blocked only”, store canonical identifiers in SharedConfig when selecting.
+    return (apps, [])
+}
+
 // MARK: - Scenes
 
 struct TotalActivityReport: DeviceActivityReportScene {
@@ -102,6 +118,9 @@ struct TotalActivityReport: DeviceActivityReportScene {
         var categoryDurations: [String: TimeInterval] = [:]
         var appsMap: [String: AppDeviceActivity] = [:]
 
+        // Filtering by blocked selection is limited without explicit identifiers; we aggregate totals as-is.
+        let filter = blockedSelection()
+
         for await segment in data.flatMap({ $0.activitySegments }) {
             totalDuration += segment.totalActivityDuration
             totalPickups += segment.totalPickupsWithoutApplicationActivity
@@ -115,11 +134,13 @@ struct TotalActivityReport: DeviceActivityReportScene {
 
             for await category in segment.categories {
                 let catName = category.category.localizedDisplayName ?? "Category"
+                // If we had category filters, apply here (filter.categories.contains(catName))
                 categoryDurations[catName, default: 0] += category.totalActivityDuration
 
                 for await app in category.applications {
                     let name = app.application.localizedDisplayName ?? "App"
                     let bundleId = app.application.bundleIdentifier
+                    // If we had app filters by bundleId, apply here (filter.apps.contains(bundleId))
                     let key = bundleId ?? name
                     let existing = appsMap[key]
                     let merged = AppDeviceActivity(
@@ -296,3 +317,4 @@ struct WidgetReport: DeviceActivityReportScene {
         )
     }
 }
+

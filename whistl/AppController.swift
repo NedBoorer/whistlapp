@@ -61,45 +61,33 @@ class AppController {
         return SetupPhase(rawValue: raw)
     }
     private var setupListener: ListenerRegistration?
+    private var userListener: ListenerRegistration?
 
     private var db: Firestore { Firestore.firestore() }
 
     @MainActor
     func listenToAuthChanges() {
         Auth.auth().addStateDidChangeListener { _, user in
-            self.authState = user != nil ? .authenticated : .notAuthenticated
-            self.currentDisplayName = user?.displayName ?? ""
+            Task { @MainActor in
+                self.authState = user != nil ? .authenticated : .notAuthenticated
+                self.currentDisplayName = user?.displayName ?? ""
 
-            guard let user else {
-                self.currentDisplayName = ""
-                self.pairId = nil
-                self.inviteCode = nil
-                self.pairingLoadState = .unknown
-                self.isMemberA = false
-                self.isMemberB = false
-                self.partnerUID = nil
-                self.detachSetupListener()
-                self.currentSetupPhaseRaw = nil
-                return
-            }
+                guard let user else {
+                    self.resetUserScopedState()
+                    return
+                }
 
-            // Reset pairing state while we fetch fresh data for this user
-            self.pairId = nil
-            self.inviteCode = nil
-            self.pairingLoadState = .loading
-            self.isMemberA = false
-            self.isMemberB = false
-            self.partnerUID = nil
-            self.detachSetupListener()
-            self.currentSetupPhaseRaw = nil
+                // Reset pairing state while we fetch fresh data for this user
+                self.resetPairScopedState()
 
-            Task {
-                let ok = await self.loadUserProfile(uid: user.uid)
-                if ok {
-                    self.observePairMembership(uid: user.uid)
-                } else {
-                    await MainActor.run {
-                        self.pairingLoadState = .unpaired
+                Task {
+                    let ok = await self.loadUserProfile(uid: user.uid)
+                    if ok {
+                        self.observePairMembership(uid: user.uid)
+                    } else {
+                        await MainActor.run {
+                            self.pairingLoadState = .unpaired
+                        }
                     }
                 }
             }
@@ -117,7 +105,9 @@ class AppController {
 
     func signIn() async throws {
         let result = try await Auth.auth().signIn(withEmail: email, password: password)
-        self.currentDisplayName = result.user.displayName ?? ""
+        await MainActor.run {
+            self.currentDisplayName = result.user.displayName ?? ""
+        }
         // listener will proceed to load profile and set pairingLoadState
     }
 
@@ -129,24 +119,39 @@ class AppController {
         try await change.commitChanges()
         try await user.reload()
         let display = Auth.auth().currentUser?.displayName ?? trimmed
-        self.currentDisplayName = display
+        await MainActor.run {
+            self.currentDisplayName = display
+        }
         try await saveUserProfile(uid: user.uid, name: display, email: user.email ?? self.email)
     }
 
     func signOut() throws {
         try Auth.auth().signOut()
         Task { @MainActor in
-            self.currentDisplayName = ""
-            self.authState = .notAuthenticated
-            self.pairId = nil
-            self.inviteCode = nil
-            self.pairingLoadState = .unknown
-            self.isMemberA = false
-            self.isMemberB = false
-            self.partnerUID = nil
-            self.detachSetupListener()
-            self.currentSetupPhaseRaw = nil
+            self.resetUserScopedState()
         }
+    }
+
+    // MARK: - State reset helpers
+
+    @MainActor
+    private func resetUserScopedState() {
+        self.currentDisplayName = ""
+        self.authState = .notAuthenticated
+        self.resetPairScopedState()
+    }
+
+    @MainActor
+    private func resetPairScopedState() {
+        self.pairId = nil
+        self.inviteCode = nil
+        self.pairingLoadState = .unknown
+        self.isMemberA = false
+        self.isMemberB = false
+        self.partnerUID = nil
+        self.detachSetupListener()
+        self.detachUserListener()
+        self.currentSetupPhaseRaw = nil
     }
 
     // MARK: - Firestore User Profile
@@ -170,16 +175,14 @@ class AppController {
         }
     }
 
-    /// Returns true if the pair is finalized: memberB is a non-empty string OR finalizedAt is set (not null).
+    /// Pair is finalized when memberB is a non-empty string OR finalizedAt exists (not null).
     private func isPairFinalized(pairId: String) async -> Bool {
         do {
             let snap = try await db.collection("pairs").document(pairId).getDocument()
             guard let data = snap.data() else { return false }
-            let memberB = data["memberB"] as? String
-            let finalizedAt = data["finalizedAt"]
-            let hasMemberB = (memberB != nil && !(memberB ?? "").isEmpty)
-            let hasFinalizedAt = finalizedAt != nil && !(finalizedAt is NSNull)
-            return hasMemberB || hasFinalizedAt
+            if let memberB = data["memberB"] as? String, !memberB.isEmpty { return true }
+            if let finalizedAt = data["finalizedAt"], !(finalizedAt is NSNull) { return true }
+            return false
         } catch {
             return false
         }
@@ -200,7 +203,7 @@ class AppController {
                 await self.resolveRoleForCurrentUser(pairId: pid, uid: uid)
                 // Also resolve partner UID
                 await self.resolvePartnerUID(pairId: pid, uid: uid)
-                // If finalized, attach setup listener
+                // If finalized, attach setup listener and ensure setup doc
                 if finalized {
                     await self.ensureInitialSetupPhase(pairId: pid)
                     self.attachSetupListener(for: pid)
@@ -236,7 +239,9 @@ class AppController {
     private var pairSpacesCollection: CollectionReference { db.collection("pairSpaces") }
 
     private func observePairMembership(uid: String) {
-        userDoc(uid: uid).addSnapshotListener { snapshot, _ in
+        detachUserListener()
+        userListener = userDoc(uid: uid).addSnapshotListener { [weak self] snapshot, _ in
+            guard let self else { return }
             guard let data = snapshot?.data() else { return }
             let pid = data["pairId"] as? String
             Task { @MainActor in
@@ -279,17 +284,17 @@ class AppController {
             do {
                 let userSnap = try txn.getDocument(self.userDoc(uid: uid))
                 if let existing = userSnap.data()?["pairId"] as? String, !existing.isEmpty {
-                    errorPtr?.pointee = PairingError.alreadyPaired as NSError
+                    errorPtr?.pointee = NSError(domain: "whistl", code: 1001, userInfo: [NSLocalizedDescriptionKey: PairingError.alreadyPaired.errorDescription ?? "Already paired"])
                     return nil
                 }
-                // Create pair doc (not finalized yet; memberB null)
+                // Create pair doc (not finalized yet; memberB absent)
                 txn.setData([
                     "createdAt": FieldValue.serverTimestamp(),
                     "inviteCode": code,
                     "memberA": uid,
-                    "memberB": NSNull(),
-                    "finalizedAt": NSNull()
-                ], forDocument: pairRef)
+                    "memberB": FieldValue.delete(),   // ensure absent if previously existed
+                    "finalizedAt": FieldValue.delete()
+                ], forDocument: pairRef, merge: true)
 
                 // Create shared space doc
                 txn.setData([
@@ -338,25 +343,26 @@ class AppController {
                 // Ensure user is not already paired
                 let userSnap = try txn.getDocument(self.userDoc(uid: uid))
                 if let existing = userSnap.data()?["pairId"] as? String, !existing.isEmpty {
-                    errorPtr?.pointee = PairingError.alreadyPaired as NSError
+                    errorPtr?.pointee = NSError(domain: "whistl", code: 1002, userInfo: [NSLocalizedDescriptionKey: PairingError.alreadyPaired.errorDescription ?? "Already paired"])
                     return nil
                 }
 
                 // Load pair doc
                 let pairSnap = try txn.getDocument(pairRef)
                 guard var data = pairSnap.data() else {
-                    errorPtr?.pointee = PairingError.codeNotFound as NSError
+                    errorPtr?.pointee = NSError(domain: "whistl", code: 1003, userInfo: [NSLocalizedDescriptionKey: PairingError.codeNotFound.errorDescription ?? "Invite code not found"])
                     return nil
                 }
                 // Ensure there's a free slot
                 if let memberB = data["memberB"] as? String, !memberB.isEmpty {
-                    errorPtr?.pointee = PairingError.pairFull as NSError
+                    errorPtr?.pointee = NSError(domain: "whistl", code: 1004, userInfo: [NSLocalizedDescriptionKey: PairingError.pairFull.errorDescription ?? "Pair is full"])
                     return nil
                 }
                 // Set memberB and finalize
                 data["memberB"] = uid
                 data["finalizedAt"] = FieldValue.serverTimestamp()
-                data["inviteCode"] = NSNull() // remove code so it can't be reused
+                // remove inviteCode so it can't be reused
+                data["inviteCode"] = FieldValue.delete()
                 txn.setData(data, forDocument: pairRef, merge: true)
 
                 // Update user with pairId
@@ -364,7 +370,6 @@ class AppController {
                 txn.setData(["pairId": pairId], forDocument: self.userDoc(uid: uid), merge: true)
 
                 // Initialize setup/current with server-controlled phase
-                // IMPORTANT: step must match SharedSetupFlow expectations
                 txn.setData([
                     "step": "appSelection",
                     "stepIndex": 0,
@@ -416,25 +421,22 @@ class AppController {
         do {
             let snap = try await setupRef.getDocument()
             if let data = snap.data() {
-                // If phase missing, set it to awaitingASubmission
+                var writes: [String: Any] = [:]
                 if data["phase"] == nil {
-                    try await setupRef.setData([
-                        "phase": SetupPhase.awaitingASubmission.rawValue,
-                        "updatedAt": FieldValue.serverTimestamp()
-                    ], merge: true)
+                    writes["phase"] = SetupPhase.awaitingASubmission.rawValue
                 }
-                // If step exists but is invalid, normalize to appSelection
                 if let step = data["step"] as? String,
                    !(step == "appSelection" || step == "weeklySchedule") {
-                    try await setupRef.setData([
-                        "step": "appSelection",
-                        "stepIndex": 0,
-                        "answers": [:],
-                        "approvals": [:],
-                        "submitted": [:],
-                        "approvedAnswers": [:],
-                        "updatedAt": FieldValue.serverTimestamp()
-                    ], merge: true)
+                    writes["step"] = "appSelection"
+                    writes["stepIndex"] = 0
+                    writes["answers"] = [:]
+                    writes["approvals"] = [:]
+                    writes["submitted"] = [:]
+                    writes["approvedAnswers"] = [:]
+                }
+                if !writes.isEmpty {
+                    writes["updatedAt"] = FieldValue.serverTimestamp()
+                    try await setupRef.setData(writes, merge: true)
                 }
             } else {
                 // Create minimal doc with correct step
@@ -531,4 +533,10 @@ class AppController {
         setupListener?.remove()
         setupListener = nil
     }
+
+    private func detachUserListener() {
+        userListener?.remove()
+        userListener = nil
+    }
 }
+

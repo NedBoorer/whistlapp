@@ -12,6 +12,10 @@ struct ContentView: View {
 
     private let brand = BrandPalette()
 
+    private var isSetupComplete: Bool {
+        appController.currentSetupPhase == .complete
+    }
+
     var body: some View {
         ZStack {
             brand.background()
@@ -19,12 +23,10 @@ struct ContentView: View {
             Group {
                 switch appController.authState {
                 case .undefined:
-                    // While Firebase restores session or we don't know yet, show a spinner.
                     ProgressView()
                         .tint(brand.accent)
 
                 case .notAuthenticated:
-                    // Entry: Welcome -> Authview (user chooses Sign in or Create account)
                     NavigationStack {
                         WelcomeView()
                             .toolbar { }
@@ -33,30 +35,27 @@ struct ContentView: View {
 
                 case .authenticated:
                     switch appController.pairingLoadState {
-                    case .unknown:
-                        // Unknown initial state; show a spinner briefly until listener updates.
-                        ProgressView()
-                            .tint(brand.accent)
-
-                    case .loading:
-                        // Explicit loading while fetching user profile/pair state.
+                    case .unknown, .loading:
                         ProgressView()
                             .tint(brand.accent)
 
                     case .unpaired:
-                        // Require pairing to continue.
                         NavigationStack {
                             PairingGateView()
                         }
                         .tint(brand.accent)
 
                     case .paired:
-                        // Route paired users into the shared setup flow until it completes.
-                        NavigationStack {
-                            SharedSetupFlowView()
-                                .navigationBarTitleDisplayMode(.inline)
+                        // If setup complete -> show HomeTabs. Otherwise show setup flow.
+                        if isSetupComplete {
+                            HomeTabs()
+                        } else {
+                            NavigationStack {
+                                SharedSetupFlowView()
+                                    .navigationBarTitleDisplayMode(.inline)
+                            }
+                            .tint(brand.accent)
                         }
-                        .tint(brand.accent)
                     }
                 }
             }

@@ -13,6 +13,14 @@
 		88702FB92E6EB3A3003D5061 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 88702FB82E6EB3A3003D5061 /* FirebaseAuth */; };
 		88A771392E72886E0024A9D5 /* ManagedSettings.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 88A771382E72886E0024A9D5 /* ManagedSettings.framework */; };
 		88A771412E72886E0024A9D5 /* shieldwhistl.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 88A771362E72886D0024A9D5 /* shieldwhistl.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		88BE53C32E798D6C00AFAFA2 /* ShieldActionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88BE53C22E798D6B00AFAFA2 /* ShieldActionHandler.swift */; };
+		88BE53C42E798D6C00AFAFA2 /* ShieldActionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88BE53C22E798D6B00AFAFA2 /* ShieldActionHandler.swift */; };
+		88BE53C52E798D6C00AFAFA2 /* ShieldActionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88BE53C22E798D6B00AFAFA2 /* ShieldActionHandler.swift */; };
+		88BE53C62E798D6C00AFAFA2 /* ShieldActionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88BE53C22E798D6B00AFAFA2 /* ShieldActionHandler.swift */; };
+		88BE53C82E798D7200AFAFA2 /* ReportHostView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88BE53C72E798D7200AFAFA2 /* ReportHostView.swift */; };
+		88BE53C92E798D7200AFAFA2 /* ReportHostView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88BE53C72E798D7200AFAFA2 /* ReportHostView.swift */; };
+		88BE53CA2E798D7200AFAFA2 /* ReportHostView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88BE53C72E798D7200AFAFA2 /* ReportHostView.swift */; };
+		88BE53CB2E798D7200AFAFA2 /* ReportHostView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88BE53C72E798D7200AFAFA2 /* ReportHostView.swift */; };
 		88F430C02E728B9400596C4E /* WhisprHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 881A3CBF2E70185000CE1BD2 /* WhisprHomeView.swift */; };
 		88F430C12E728B9900596C4E /* Brand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 881A3C9F2E6FCC9000CE1BD2 /* Brand.swift */; };
 		88F430CF2E728C5800596C4E /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 88F430CE2E728C5800596C4E /* FirebaseAuth */; };
@@ -95,6 +103,8 @@
 		88702FA72E6EB154003D5061 /* whistl.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = whistl.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		88A771362E72886D0024A9D5 /* shieldwhistl.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = shieldwhistl.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		88A771382E72886E0024A9D5 /* ManagedSettings.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ManagedSettings.framework; path = System/Library/Frameworks/ManagedSettings.framework; sourceTree = SDKROOT; };
+		88BE53C22E798D6B00AFAFA2 /* ShieldActionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShieldActionHandler.swift; sourceTree = "<group>"; };
+		88BE53C72E798D7200AFAFA2 /* ReportHostView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportHostView.swift; sourceTree = "<group>"; };
 		88F430E72E7297D400596C4E /* shieldwhistlconfig.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = shieldwhistlconfig.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		88F430E92E7297D500596C4E /* ManagedSettingsUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ManagedSettingsUI.framework; path = System/Library/Frameworks/ManagedSettingsUI.framework; sourceTree = SDKROOT; };
 		88F4318D2E7388BC00596C4E /* ReportExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.extensionkit-extension"; includeInIndex = 0; path = ReportExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -118,26 +128,17 @@
 				ContentView.swift,
 				FocusMenuView.swift,
 				FocusScheduleViewModel.swift,
+				HomeTabs.swift,
 				NotificationHelper.swift,
 				PairingViews.swift,
 				ProfileView.swift,
-				ReportHostView.swift,
 				SharedConfig.swift,
 				SharedSetupFlow.swift,
 				SignUpView.swift,
 				SplashView.swift,
 				WelcomeView.swift,
-				whistlApp.swift,
 			);
 			target = 88A771352E72886D0024A9D5 /* shieldwhistl */;
-		};
-		88F430CA2E728BCB00596C4E /* Exceptions for "shieldwhistl" folder in "whistl" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				ShieldActionExtension.swift,
-				ShieldDataSource.swift,
-			);
-			target = 88702FA62E6EB154003D5061 /* whistl */;
 		};
 		88F430F62E7297D500596C4E /* Exceptions for "shieldwhistlconfig" folder in "shieldwhistlconfig" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
@@ -176,16 +177,15 @@
 				ContentView.swift,
 				FocusMenuView.swift,
 				FocusScheduleViewModel.swift,
+				HomeTabs.swift,
 				NotificationHelper.swift,
 				PairingViews.swift,
 				ProfileView.swift,
-				ReportHostView.swift,
 				SharedConfig.swift,
 				SharedSetupFlow.swift,
 				SignUpView.swift,
 				SplashView.swift,
 				WelcomeView.swift,
-				whistlApp.swift,
 			);
 			target = 88F430E62E7297D400596C4E /* shieldwhistlconfig */;
 		};
@@ -198,10 +198,10 @@
 				ContentView.swift,
 				FocusMenuView.swift,
 				FocusScheduleViewModel.swift,
+				HomeTabs.swift,
 				NotificationHelper.swift,
 				PairingViews.swift,
 				ProfileView.swift,
-				ReportHostView.swift,
 				SharedConfig.swift,
 				SharedSetupFlow.swift,
 				SignUpView.swift,
@@ -256,22 +256,6 @@
 			);
 			target = 88F4318C2E7388BC00596C4E /* ReportExtension */;
 		};
-		88F432122E738C7A00596C4E /* Exceptions for "shieldwhistl" folder in "shieldwhistlconfig" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				ShieldActionExtension.swift,
-				ShieldDataSource.swift,
-			);
-			target = 88F430E62E7297D400596C4E /* shieldwhistlconfig */;
-		};
-		88F432132E738C7A00596C4E /* Exceptions for "shieldwhistl" folder in "ReportExtension" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				ShieldActionExtension.swift,
-				ShieldDataSource.swift,
-			);
-			target = 88F4318C2E7388BC00596C4E /* ReportExtension */;
-		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -288,10 +272,7 @@
 		88A7713A2E72886E0024A9D5 /* shieldwhistl */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				88F430CA2E728BCB00596C4E /* Exceptions for "shieldwhistl" folder in "whistl" target */,
 				88A771422E72886E0024A9D5 /* Exceptions for "shieldwhistl" folder in "shieldwhistl" target */,
-				88F432122E738C7A00596C4E /* Exceptions for "shieldwhistl" folder in "shieldwhistlconfig" target */,
-				88F432132E738C7A00596C4E /* Exceptions for "shieldwhistl" folder in "ReportExtension" target */,
 			);
 			path = shieldwhistl;
 			sourceTree = "<group>";
@@ -379,6 +360,8 @@
 				88702FA82E6EB154003D5061 /* Products */,
 				881A3C9F2E6FCC9000CE1BD2 /* Brand.swift */,
 				881A3CBF2E70185000CE1BD2 /* WhisprHomeView.swift */,
+				88BE53C22E798D6B00AFAFA2 /* ShieldActionHandler.swift */,
+				88BE53C72E798D7200AFAFA2 /* ReportHostView.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -599,6 +582,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				88BE53CB2E798D7200AFAFA2 /* ReportHostView.swift in Sources */,
+				88BE53C62E798D6C00AFAFA2 /* ShieldActionHandler.swift in Sources */,
 				881A3CC02E70185000CE1BD2 /* WhisprHomeView.swift in Sources */,
 				881A3CA02E6FCC9000CE1BD2 /* Brand.swift in Sources */,
 			);
@@ -608,6 +593,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				88BE53C92E798D7200AFAFA2 /* ReportHostView.swift in Sources */,
+				88BE53C32E798D6C00AFAFA2 /* ShieldActionHandler.swift in Sources */,
 				88F430C02E728B9400596C4E /* WhisprHomeView.swift in Sources */,
 				88F430C12E728B9900596C4E /* Brand.swift in Sources */,
 			);
@@ -617,6 +604,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				88BE53C82E798D7200AFAFA2 /* ReportHostView.swift in Sources */,
+				88BE53C42E798D6C00AFAFA2 /* ShieldActionHandler.swift in Sources */,
 				88F432402E738F2B00596C4E /* WhisprHomeView.swift in Sources */,
 				88F4323C2E738F1F00596C4E /* Brand.swift in Sources */,
 			);
@@ -626,6 +615,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				88BE53CA2E798D7200AFAFA2 /* ReportHostView.swift in Sources */,
+				88BE53C52E798D6C00AFAFA2 /* ShieldActionHandler.swift in Sources */,
 				88F432412E738F2B00596C4E /* WhisprHomeView.swift in Sources */,
 				88F4323D2E738F1F00596C4E /* Brand.swift in Sources */,
 			);

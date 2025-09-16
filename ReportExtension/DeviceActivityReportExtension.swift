@@ -10,7 +10,7 @@ import ExtensionKit
 import SwiftUI
 
 @main
-struct ReportExtension: DeviceActivityReportExtension {
+struct ReportExtensioner: DeviceActivityReportExtension {
     var body: some DeviceActivityReportScene {
         // Home summary
         HomeReport { model in
@@ -34,4 +34,3 @@ struct ReportExtension: DeviceActivityReportExtension {
         }
     }
 }
-
