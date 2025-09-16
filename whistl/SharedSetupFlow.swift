@@ -110,6 +110,9 @@ struct SharedSetupFlowView: View {
     @State private var revisionActive = false
     @State private var didCheckForAutoStart = false
 
+    // Partner display name (fetched locally)
+    @State private var partnerDisplayName: String = ""
+
     private var db: Firestore { Firestore.firestore() }
     private var pairId: String? { appController.pairId }
     private var uid: String? { Auth.auth().currentUser?.uid }
@@ -124,11 +127,12 @@ struct SharedSetupFlowView: View {
                 // Top header
                 VStack(spacing: 12) {
                     HeaderWithProgress(
-                        title: "Partner setup",
-                        subtitle: "Choose apps, set the schedule, then approve each other.",
+                        title: "Mate setup",
+                        subtitle: "Pick gambling apps, set your hours, approve each other.",
                         stepIndex: setup.stepIndex,
                         totalSteps: totalSteps,
-                        brand: brand
+                        brand: brand,
+                        partnerName: partnerDisplayName
                     )
                     InfoCarousel(brand: brand)
                         .padding(.horizontal, 20)
@@ -144,6 +148,9 @@ struct SharedSetupFlowView: View {
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.secondary)
                     Spacer()
+                    Label("Gambling prevention", systemImage: "shield.lefthalf.filled")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(brand.accent)
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 8)
@@ -171,6 +178,16 @@ struct SharedSetupFlowView: View {
                     } else {
                         ScrollView {
                             VStack(spacing: 14) {
+                                // Mate overview card is always visible at top for context
+                                MateOverviewCard(
+                                    brand: brand,
+                                    partnerName: partnerDisplayName,
+                                    approvedSelection: unionApprovedSelections(),
+                                    approvedPlan: latestApprovedWeeklyPlan(),
+                                    attemptsToday: AnalyticsStore.attemptsToday()
+                                )
+                                .padding(.horizontal, 20)
+
                                 switch setup.step {
                                 case SetupStepID.appSelection:
                                     AppSelectionStepView(
@@ -224,7 +241,7 @@ struct SharedSetupFlowView: View {
                 bottomBar
             }
         }
-        .navigationTitle("Partner setup")
+        .navigationTitle("Mate setup")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -252,6 +269,7 @@ struct SharedSetupFlowView: View {
         }
         .task {
             await attachListener()
+            await fetchPartnerDisplayName()
         }
         .onDisappear {
             listener?.remove()
@@ -271,6 +289,24 @@ struct SharedSetupFlowView: View {
         .tint(brand.accent)
         .animation(.easeInOut(duration: 0.25), value: setup.step)
         .animation(.easeInOut(duration: 0.25), value: setup.phase)
+    }
+
+    // MARK: - Partner name fetch
+
+    private func fetchPartnerDisplayName() async {
+        guard let partner = appController.partnerUID, !partner.isEmpty else {
+            await MainActor.run { self.partnerDisplayName = "Your mate" }
+            return
+        }
+        do {
+            let snap = try await db.collection("users").document(partner).getDocument()
+            let name = (snap.data()?["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            await MainActor.run {
+                self.partnerDisplayName = (name?.isEmpty == false) ? name! : "Your mate"
+            }
+        } catch {
+            await MainActor.run { self.partnerDisplayName = "Your mate" }
+        }
     }
 
     // MARK: - Compact header helpers
@@ -510,12 +546,13 @@ struct SharedSetupFlowView: View {
                 self.errorMessage = nil
                 self.hydrateDraftsFromServer()
 
-                // On first load only: if doc is complete, start a new full revision (apps + schedule).
+                // On first load only: if doc is complete, persist and dismiss (do NOT auto-start a revision).
                 if !self.didCheckForAutoStart {
                     self.didCheckForAutoStart = true
                     if SetupPhaseLocal(rawValue: phaseRaw) == .complete {
-                        self.revisionActive = true
-                        Task { await self.startScheduleRevision_TX() }
+                        self.persistApprovedConfiguration()
+                        self.revisionActive = false
+                        self.dismiss()
                     }
                 }
             }
@@ -962,6 +999,7 @@ private struct HeaderWithProgress: View {
     let stepIndex: Int
     let totalSteps: Int
     let brand: BrandPalette
+    var partnerName: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -972,7 +1010,7 @@ private struct HeaderWithProgress: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .font(.title2.bold())
-                    Text(subtitle)
+                    Text("\(subtitle) • With \(partnerName.isEmpty ? "your mate" : partnerName)")
                         .font(.callout)
                         .foregroundStyle(brand.secondaryText)
                 }
@@ -999,8 +1037,8 @@ private struct InfoCarousel: View {
     @State private var index = 0
 
     private let slides: [(String, String, String)] = [
-        ("apps.iphone", "Pick what to block", "Choose categories and apps to keep off-limits."),
-        ("calendar.badge.clock", "Set your hours", "Pick days and time windows that work for both of you."),
+        ("shield.lefthalf.filled", "Block gambling temptations", "Pick betting, casino and other risky apps."),
+        ("clock.badge.checkmark", "Agree on hours", "Choose windows that support each other."),
         ("person.2.fill", "Approve each other", "Only one phone is active at a time. Submit, approve, then swap.")
     ]
 
@@ -1132,6 +1170,146 @@ private struct PrimaryActionButton: View {
     }
 }
 
+// MARK: - Mate Overview Card
+
+private struct MateOverviewCard: View {
+    let brand: BrandPalette
+    let partnerName: String
+    let approvedSelection: FamilyActivitySelection
+    let approvedPlan: WeeklyBlockPlan?
+    let attemptsToday: [AttemptEvent]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: "person.crop.circle.fill.badge.checkmark")
+                    .font(.system(size: 24))
+                    .foregroundStyle(brand.accent)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(partnerName.isEmpty ? "Your mate" : partnerName)")
+                        .font(.headline)
+                    Text("Overview • Activity and restrictions")
+                        .font(.footnote)
+                        .foregroundStyle(brand.secondaryText)
+                }
+                Spacer()
+                Image(systemName: "shield")
+                    .foregroundStyle(brand.accent)
+            }
+
+            // Selection summary
+            HStack(spacing: 8) {
+                Image(systemName: "apps.iphone")
+                    .foregroundStyle(brand.secondaryText)
+                Text(selectionSummary)
+                    .font(.subheadline)
+                    .foregroundStyle(brand.secondaryText)
+                Spacer()
+            }
+
+            // Plan summary
+            if let plan = approvedPlan {
+                HStack(spacing: 8) {
+                    Image(systemName: "calendar.badge.clock")
+                        .foregroundStyle(brand.secondaryText)
+                    Text(planSummary(plan))
+                        .font(.subheadline)
+                        .foregroundStyle(brand.secondaryText)
+                    Spacer()
+                }
+            } else {
+                HStack(spacing: 8) {
+                    Image(systemName: "calendar.badge.clock")
+                        .foregroundStyle(brand.secondaryText)
+                    Text("No approved schedule yet")
+                        .font(.subheadline)
+                        .foregroundStyle(brand.secondaryText)
+                    Spacer()
+                }
+            }
+
+            Divider().opacity(0.25)
+
+            // Lightweight activity today (from local analytics as placeholder)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Image(systemName: "chart.bar.fill")
+                        .foregroundStyle(brand.accent)
+                    Text("Today’s attempts")
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                }
+                if attemptsToday.isEmpty {
+                    Text("No blocked attempts recorded today.")
+                        .font(.footnote)
+                        .foregroundStyle(brand.secondaryText)
+                } else {
+                    let top = AnalyticsStore.topCulpritsToday(limit: 3)
+                    ForEach(Array(top.enumerated()), id: \.offset) { _, entry in
+                        HStack {
+                            Image(systemName: entry.kind == "app" ? "app.fill" : "square.grid.2x2.fill")
+                                .foregroundStyle(brand.secondaryText)
+                            Text("\(readableIdentifier(entry.identifier))")
+                                .font(.footnote)
+                            Spacer()
+                            Text("\(entry.count)×")
+                                .font(.footnote.monospacedDigit())
+                                .foregroundStyle(brand.secondaryText)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(brand.fieldBackground)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(brand.cardStroke, lineWidth: 1)
+        )
+        .accessibilityElement(children: .combine)
+    }
+
+    private var selectionSummary: String {
+        let apps = approvedSelection.applicationTokens.count
+        let cats = approvedSelection.categoryTokens.count
+        if apps == 0 && cats == 0 { return "No approved apps or categories yet." }
+        var parts: [String] = []
+        if apps > 0 { parts.append("\(apps) app\(apps == 1 ? "" : "s")") }
+        if cats > 0 { parts.append("\(cats) categor\(cats == 1 ? "y" : "ies")") }
+        return parts.joined(separator: " + ")
+    }
+
+    private func planSummary(_ plan: WeeklyBlockPlan) -> String {
+        let enabledDays = plan.days.filter { $0.enabled }
+        if enabledDays.isEmpty { return "Schedule disabled" }
+        // Show count of enabled days and first range as a hint
+        if let first = enabledDays.first?.ranges.first {
+            return "\(enabledDays.count) day\(enabledDays.count == 1 ? "" : "s") • \(timeString(minutes: first.startMinutes))–\(timeString(minutes: first.endMinutes))"
+        }
+        return "\(enabledDays.count) day\(enabledDays.count == 1 ? "" : "s")"
+    }
+
+    private func timeString(minutes: Int) -> String {
+        let h = minutes / 60
+        let m = minutes % 60
+        let comps = DateComponents(hour: h, minute: m)
+        let date = Calendar.current.date(from: comps) ?? Date()
+        let f = DateFormatter()
+        f.timeStyle = .short
+        return f.string(from: date)
+    }
+
+    private func readableIdentifier(_ raw: String) -> String {
+        if let cached = SharedConfigStore.appName(for: raw) {
+            return cached
+        }
+        return raw
+    }
+}
+
 // MARK: - Step 1 UI: App selection
 
 private struct AppSelectionStepView: View {
@@ -1151,12 +1329,12 @@ private struct AppSelectionStepView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
-                Image(systemName: "apps.iphone")
+                Image(systemName: "dice.fill")
                     .foregroundStyle(brand.accent)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Which apps should be blocked?")
+                    Text("Which gambling apps should be blocked?")
                         .font(.headline)
-                    Text("Choose categories and apps. Submit your selection, then your partner will approve it.")
+                    Text("Choose categories and apps. Submit your selection, then your mate will approve it.")
                         .foregroundStyle(brand.secondaryText)
                         .font(.footnote)
                 }
@@ -1184,11 +1362,11 @@ private struct AppSelectionStepView: View {
                 if role == "A", phase == .awaitingASubmission {
                     PrimaryActionButton(title: "Submit your selection", isLoading: isSaving, brand: brand, action: onSubmit, disabled: selectionIsEmpty)
                 } else if role == "B", phase == .awaitingBApproval {
-                    PrimaryActionButton(title: "Approve partner’s selection", isLoading: isSaving, brand: brand, action: onApprove)
+                    PrimaryActionButton(title: "Approve mate’s selection", isLoading: isSaving, brand: brand, action: onApprove)
                 } else if role == "B", phase == .awaitingBSubmission {
                     PrimaryActionButton(title: "Submit your selection", isLoading: isSaving, brand: brand, action: onSubmit, disabled: selectionIsEmpty)
                 } else if role == "A", phase == .awaitingAApproval {
-                    PrimaryActionButton(title: "Approve partner’s selection", isLoading: isSaving, brand: brand, action: onApprove)
+                    PrimaryActionButton(title: "Approve mate’s selection", isLoading: isSaving, brand: brand, action: onApprove)
                 } else if phase == .complete {
                     Label("Completed", systemImage: "checkmark.circle.fill")
                         .foregroundStyle(.green)
@@ -1230,7 +1408,7 @@ private struct AppSelectionStepView: View {
     }
 }
 
-// MARK: - Step 2 UI: Weekly schedule
+// MARK: - Step 2 UI: Weekly schedule (with range sliders)
 
 private struct WeeklyScheduleStepView: View {
     @Binding var plan: WeeklyBlockPlan
@@ -1442,47 +1620,68 @@ private struct WeeklyScheduleStepView: View {
     @ViewBuilder
     private func rangeEditor(dayIndex: Int, rangeIndex: Int) -> some View {
         let range = plan.days[dayIndex].ranges[rangeIndex]
-        HStack(spacing: 12) {
-            VStack(alignment: .leading) {
-                Text("Start").font(.caption).foregroundStyle(.secondary)
-                DatePicker(
-                    "",
-                    selection: Binding<Date>(
-                        get: { date(fromMinutes: range.startMinutes) },
-                        set: { newDate in
-                            plan.days[dayIndex].ranges[rangeIndex].startMinutes = minutes(from: newDate)
-                        }
-                    ),
-                    displayedComponents: [.hourAndMinute]
-                )
-                .labelsHidden()
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Label("\(timeString(minutes: range.startMinutes)) – \(timeString(minutes: range.endMinutes))", systemImage: "clock")
+                    .foregroundStyle(.primary)
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Button(role: .destructive) {
+                    plan.days[dayIndex].ranges.remove(at: rangeIndex)
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.borderless)
             }
 
-            Image(systemName: "arrow.right").foregroundStyle(.secondary)
+            // Dual-ended slider for 0...1439 minutes
+            RangeSlider(
+                start: Binding(
+                    get: { Double(range.startMinutes) },
+                    set: { newVal in plan.days[dayIndex].ranges[rangeIndex].startMinutes = Int(newVal) }
+                ),
+                end: Binding(
+                    get: { Double(range.endMinutes) },
+                    set: { newVal in plan.days[dayIndex].ranges[rangeIndex].endMinutes = Int(newVal) }
+                ),
+                minValue: 0,
+                maxValue: 1439,
+                minGap: 15, // at least 15 minutes
+                accent: brand.accent
+            )
 
-            VStack(alignment: .leading) {
-                Text("End").font(.caption).foregroundStyle(.secondary)
-                DatePicker(
-                    "",
-                    selection: Binding<Date>(
-                        get: { date(fromMinutes: range.endMinutes) },
-                        set: { newDate in
-                            plan.days[dayIndex].ranges[rangeIndex].endMinutes = minutes(from: newDate)
-                        }
-                    ),
-                    displayedComponents: [.hourAndMinute]
-                )
-                .labelsHidden()
+            // Accessibility fallback: tap to edit precise times
+            HStack(spacing: 12) {
+                VStack(alignment: .leading) {
+                    Text("Start").font(.caption).foregroundStyle(.secondary)
+                    DatePicker(
+                        "",
+                        selection: Binding<Date>(
+                            get: { date(fromMinutes: range.startMinutes) },
+                            set: { newDate in
+                                plan.days[dayIndex].ranges[rangeIndex].startMinutes = minutes(from: newDate)
+                            }
+                        ),
+                        displayedComponents: [.hourAndMinute]
+                    )
+                    .labelsHidden()
+                }
+                VStack(alignment: .leading) {
+                    Text("End").font(.caption).foregroundStyle(.secondary)
+                    DatePicker(
+                        "",
+                        selection: Binding<Date>(
+                            get: { date(fromMinutes: range.endMinutes) },
+                            set: { newDate in
+                                plan.days[dayIndex].ranges[rangeIndex].endMinutes = minutes(from: newDate)
+                            }
+                        ),
+                        displayedComponents: [.hourAndMinute]
+                    )
+                    .labelsHidden()
+                }
+                Spacer()
             }
-
-            Spacer()
-
-            Button(role: .destructive) {
-                plan.days[dayIndex].ranges.remove(at: rangeIndex)
-            } label: {
-                Image(systemName: "trash")
-            }
-            .buttonStyle(.borderless)
         }
         .padding(8)
         .background(
@@ -1519,6 +1718,16 @@ private struct WeeklyScheduleStepView: View {
         let h = comps.hour ?? 0
         let m = comps.minute ?? 0
         return h * 60 + m
+    }
+
+    private func timeString(minutes: Int) -> String {
+        let h = minutes / 60
+        let m = minutes % 60
+        let comps = DateComponents(hour: h, minute: m)
+        let date = Calendar.current.date(from: comps) ?? Date()
+        let f = DateFormatter()
+        f.timeStyle = .short
+        return f.string(from: date)
     }
 }
 
@@ -1598,5 +1807,98 @@ private extension Array where Element == Bool {
     subscript(safe index: Int) -> Bool? {
         guard indices.contains(index) else { return nil }
         return self[index]
+    }
+}
+
+// MARK: - RangeSlider (dual-ended) for minutes 0...1439
+
+private struct RangeSlider: View {
+    @Binding var start: Double
+    @Binding var end: Double
+    let minValue: Double
+    let maxValue: Double
+    let minGap: Double
+    let accent: Color
+
+    private let trackHeight: CGFloat = 6
+    private let thumbSize: CGFloat = 20
+
+    var body: some View {
+        GeometryReader { geo in
+            let width = geo.size.width
+            let startX = x(for: start, width: width)
+            let endX = x(for: end, width: width)
+
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.secondary.opacity(0.2))
+                    .frame(height: trackHeight)
+
+                Capsule().fill(accent)
+                    .frame(width: max(0, endX - startX), height: trackHeight)
+                    .offset(x: startX)
+
+                // Start thumb
+                Circle()
+                    .fill(.white)
+                    .overlay(Circle().stroke(accent, lineWidth: 2))
+                    .frame(width: thumbSize, height: thumbSize)
+                    .offset(x: startX - thumbSize/2, y: -(thumbSize - trackHeight)/2)
+                    .gesture(
+                        DragGesture()
+                            .onChanged { value in
+                                let clamped = value.location.x.clamped(to: 0...width)
+                                let minutes = valueToMinutes(clamped, width: width)
+                                let limited = min(maxValue - minGap, max(minValue, minutes))
+                                start = min(limited, end - minGap)
+                            }
+                    )
+
+                // End thumb
+                Circle()
+                    .fill(.white)
+                    .overlay(Circle().stroke(accent, lineWidth: 2))
+                    .frame(width: thumbSize, height: thumbSize)
+                    .offset(x: endX - thumbSize/2, y: -(thumbSize - trackHeight)/2)
+                    .gesture(
+                        DragGesture()
+                            .onChanged { value in
+                                let clamped = value.location.x.clamped(to: 0...width)
+                                let minutes = valueToMinutes(clamped, width: width)
+                                let limited = max(minValue + minGap, min(maxValue, minutes))
+                                end = max(limited, start + minGap)
+                            }
+                    )
+            }
+        }
+        .frame(height: 32)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Time range")
+        .accessibilityValue("\(minutesToTimeString(Int(start))) to \(minutesToTimeString(Int(end)))")
+    }
+
+    private func x(for value: Double, width: CGFloat) -> CGFloat {
+        let t = (value - minValue) / (maxValue - minValue)
+        return CGFloat(t) * width
+    }
+
+    private func valueToMinutes(_ x: CGFloat, width: CGFloat) -> Double {
+        let t = max(0, min(1, x / max(1, width)))
+        return minValue + (maxValue - minValue) * Double(t)
+    }
+
+    private func minutesToTimeString(_ minutes: Int) -> String {
+        let h = minutes / 60
+        let m = minutes % 60
+        let comps = DateComponents(hour: h, minute: m)
+        let date = Calendar.current.date(from: comps) ?? Date()
+        let f = DateFormatter()
+        f.timeStyle = .short
+        return f.string(from: date)
+    }
+}
+
+private extension CGFloat {
+    func clamped(to range: ClosedRange<CGFloat>) -> CGFloat {
+        return Swift.max(range.lowerBound, Swift.min(range.upperBound, self))
     }
 }
