@@ -18,8 +18,8 @@ struct BlockSchedule: Codable, Equatable {
 
 enum SetupPhaseLocal: String {
     case awaitingASubmission
-    case awaitingBApproval
     case awaitingBSubmission
+    case awaitingBApproval
     case awaitingAApproval
     case complete
 }
@@ -113,6 +113,10 @@ struct SharedSetupFlowView: View {
     // Partner display name (fetched locally)
     @State private var partnerDisplayName: String = ""
 
+    // Authorization
+    @State private var isAuthorized: Bool = SharedConfigStore.loadIsAuthorized()
+    @State private var lastAuthMessage: String = ""
+
     private var db: Firestore { Firestore.firestore() }
     private var pairId: String? { appController.pairId }
     private var uid: String? { Auth.auth().currentUser?.uid }
@@ -128,7 +132,7 @@ struct SharedSetupFlowView: View {
                 VStack(spacing: 12) {
                     HeaderWithProgress(
                         title: "Mate setup",
-                        subtitle: "Pick gambling apps, set your hours, approve each other.",
+                        subtitle: "Set this up together. Block gambling apps and agree your hours.",
                         stepIndex: setup.stepIndex,
                         totalSteps: totalSteps,
                         brand: brand,
@@ -138,7 +142,7 @@ struct SharedSetupFlowView: View {
                         .padding(.horizontal, 20)
                 }
                 .padding(.top, 8)
-                .padding(.bottom, 6)
+                .padding(.bottom, 15)
 
                 // Status strip
                 HStack(spacing: 8) {
@@ -153,7 +157,7 @@ struct SharedSetupFlowView: View {
                         .foregroundStyle(brand.accent)
                 }
                 .padding(.horizontal, 20)
-                .padding(.bottom, 8)
+                .padding(.bottom, 15)
 
                 if let errorMessage {
                     Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
@@ -166,7 +170,17 @@ struct SharedSetupFlowView: View {
 
                 // Content
                 Group {
-                    if shouldShowWaitingFullScreen {
+                    // 1) Authorization gate first
+                    if !isAuthorized {
+                        AuthorizationGateView(
+                            isAuthorized: $isAuthorized,
+                            lastMessage: $lastAuthMessage,
+                            brand: brand
+                        )
+                        .padding(.horizontal, 20)
+                        .padding(.top, 8)
+                    } else if shouldShowWaitingFullScreen {
+                        // 2) Waiting screen during partner turns
                         WaitingFullScreen(
                             title: waitingTitle,
                             message: waitingMessageLong,
@@ -178,7 +192,15 @@ struct SharedSetupFlowView: View {
                     } else {
                         ScrollView {
                             VStack(spacing: 14) {
-                                // Mate overview card is always visible at top for context
+                                // Partner schedule card (always visible for context)
+                                PartnerScheduleCard(
+                                    brand: brand,
+                                    partnerName: partnerDisplayName,
+                                    approvedPlan: latestApprovedWeeklyPlan()
+                                )
+                                .padding(.horizontal, 20)
+
+                                // Mate overview card
                                 MateOverviewCard(
                                     brand: brand,
                                     partnerName: partnerDisplayName,
@@ -187,6 +209,13 @@ struct SharedSetupFlowView: View {
                                     attemptsToday: AnalyticsStore.attemptsToday()
                                 )
                                 .padding(.horizontal, 20)
+
+//                                // 3) One-tap emergency block: "Block everything now"
+//                                EmergencyBlockNowCard(
+//                                    brand: brand,
+//                                    onActivate: { activateBlockEverythingNow() }
+//                                )
+//                                .padding(.horizontal, 20)
 
                                 switch setup.step {
                                 case SetupStepID.appSelection:
@@ -244,7 +273,7 @@ struct SharedSetupFlowView: View {
         .navigationTitle("Mate setup")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .topBarTrailing) {
                 Button {
                     do { try appController.signOut() } catch { }
                 } label: {
@@ -255,7 +284,12 @@ struct SharedSetupFlowView: View {
                 .accessibilityLabel("Log out")
             }
         }
-        .sheet(isPresented: $showingPicker) {
+        .sheet(isPresented: $showingPicker, onDismiss: {
+            // Persist and apply selection immediately so category updates affect blocked apps now
+            SharedConfigStore.save(selection: myAppSelection)
+            postConfigDidChangeDarwinNotification()
+            ReportingScheduler.shared.refreshMonitoringFromShared()
+        }) {
             NavigationStack {
                 FamilyActivityPicker(selection: $myAppSelection)
                     .navigationTitle("Choose activities")
@@ -270,6 +304,7 @@ struct SharedSetupFlowView: View {
         .task {
             await attachListener()
             await fetchPartnerDisplayName()
+            await refreshAuthorization()
         }
         .onDisappear {
             listener?.remove()
@@ -309,6 +344,59 @@ struct SharedSetupFlowView: View {
         }
     }
 
+    // MARK: - Authorization
+
+    @MainActor
+    private func refreshAuthorization() async {
+        let status = AuthorizationCenter.shared.authorizationStatus
+        switch status {
+        case .approved:
+            isAuthorized = true
+            lastAuthMessage = "Screen Time access approved."
+        case .notDetermined:
+            isAuthorized = false
+            lastAuthMessage = "Screen Time access not determined."
+        case .denied:
+            isAuthorized = false
+            lastAuthMessage = "Screen Time access denied."
+        @unknown default:
+            isAuthorized = false
+            lastAuthMessage = "Unknown authorization state."
+        }
+        SharedConfigStore.save(isAuthorized: isAuthorized)
+        postConfigDidChangeDarwinNotification()
+        if isAuthorized {
+            ReportingScheduler.shared.refreshMonitoringFromShared()
+        } else {
+            ReportingScheduler.shared.stopAllMonitoring()
+        }
+    }
+
+    @MainActor
+    private func requestAuthorization() async {
+        do {
+            try await AuthorizationCenter.shared.requestAuthorization(for: .individual)
+        } catch {
+            lastAuthMessage = (error as NSError).localizedDescription
+        }
+        await refreshAuthorization()
+    }
+
+    // MARK: - Block everything now
+
+    private func activateBlockEverythingNow() {
+        // Mark manual block active; the Shield will honor this and block immediately.
+        SharedConfigStore.save(isManualBlockActive: true)
+
+        // Optional: Also store a broad selection for reporting UI (not strictly required for blocking)
+        // Here we leave applicationTokens empty and let ManagedSettings use categories.
+        // The Shield implementation should treat manual block as "block all categories".
+        postConfigDidChangeDarwinNotification()
+        ReportingScheduler.shared.refreshMonitoringFromShared()
+
+        Task { await notifyPartnerOfRequest(kind: .breakRequest) }
+    }
+
     // MARK: - Compact header helpers
 
     private var roleBadge: some View {
@@ -328,8 +416,8 @@ struct SharedSetupFlowView: View {
 
     private var stepTitle: String {
         switch setup.step {
-        case SetupStepID.appSelection: return "Step 1 • Choose apps"
-        case SetupStepID.weeklySchedule: return "Step 2 • Set schedule"
+        case SetupStepID.appSelection: return "Step 1 • Choose gambling apps together"
+        case SetupStepID.weeklySchedule: return "Step 2 • Agree your blocking hours"
         default: return "Setup"
         }
     }
@@ -367,13 +455,13 @@ struct SharedSetupFlowView: View {
     private var phaseHintTitle: String {
         switch currentPhase {
         case .awaitingASubmission:
-            return currentRole == "A" ? "Your turn to submit" : "Waiting for your partner"
+            return currentRole == "A" ? "Your turn — propose apps to block" : "Waiting for your mate to propose apps"
         case .awaitingBApproval:
-            return currentRole == "B" ? "Please review and approve" : "Awaiting partner approval"
+            return currentRole == "B" ? "Review and approve your mate’s apps" : "Waiting for your mate to approve"
         case .awaitingBSubmission:
-            return currentRole == "B" ? "Your turn to submit" : "Waiting for your partner"
+            return currentRole == "B" ? "Your turn — propose apps to block" : "Waiting for your mate to propose apps"
         case .awaitingAApproval:
-            return currentRole == "A" ? "Please review and approve" : "Awaiting partner approval"
+            return currentRole == "A" ? "Review and approve your mate’s apps" : "Waiting for your mate to approve"
         case .complete:
             return "Setup complete"
         }
@@ -382,9 +470,9 @@ struct SharedSetupFlowView: View {
     private var phaseHintSubtitle: String {
         switch currentPhase {
         case .awaitingASubmission, .awaitingBSubmission:
-            return "Make your proposal and send it over."
+            return "Sit together. One proposes, the other will approve."
         case .awaitingBApproval, .awaitingAApproval:
-            return "Review your partner’s proposal."
+            return "Check carefully — this prevents gambling across your devices."
         case .complete:
             return "You can request changes from Home later."
         }
@@ -428,8 +516,8 @@ struct SharedSetupFlowView: View {
 
         switch (role, phase) {
         case ("A", .awaitingASubmission),
-             ("B", .awaitingBApproval),
              ("B", .awaitingBSubmission),
+             ("B", .awaitingBApproval),
              ("A", .awaitingAApproval):
             return false
         case (_, .complete):
@@ -442,22 +530,49 @@ struct SharedSetupFlowView: View {
     private var waitingTitle: String { "Waiting for your partner" }
 
     private var waitingMessageLong: String {
-        let stepName = setup.step == SetupStepID.appSelection ? "apps" : "times"
+        let stepName = setup.step == SetupStepID.appSelection ? "apps to block" : "blocking hours"
         switch currentPhase {
         case .awaitingASubmission:
-            return currentRole == "B" ? "Your partner is choosing \(stepName). Please look at their phone." : "Waiting…"
+            return currentRole == "B" ? "Your mate is proposing \(stepName). Stay together and review when ready." : "Waiting…"
         case .awaitingBApproval:
-            return currentRole == "A" ? "Waiting for your partner to confirm your proposal." : "Waiting…"
+            return currentRole == "A" ? "Your mate is reviewing your proposal. Sit together and discuss if needed." : "Waiting…"
         case .awaitingBSubmission:
-            return currentRole == "B" ? "Your turn to submit." : "Waiting…"
+            return currentRole == "A" ? "Your mate is proposing \(stepName). Stay together and review when ready." : "Waiting…"
         case .awaitingAApproval:
-            return currentRole == "A" ? "Please review and approve." : "Waiting…"
+            return currentRole == "B" ? "Your mate is reviewing your proposal. Sit together and discuss if needed." : "Waiting…"
         case .complete:
             return "Setup complete."
         }
     }
 
     // MARK: - Firestore ops
+
+    private enum PartnerNotificationKind: String {
+        case scheduleChangeRequest
+        case breakRequest
+    }
+
+    private func notifyPartnerOfRequest(kind: PartnerNotificationKind) async {
+        guard let partnerUid = appController.partnerUID, let myUid = uid, let pairId else { return }
+        let collection = db.collection("pairSpaces").document(pairId).collection("notifications")
+        let payload: [String: Any] = [
+            "toUid": partnerUid,
+            "fromUid": myUid,
+            "pairId": pairId,
+            "kind": kind.rawValue,
+            "title": kind == .scheduleChangeRequest ? "Review requested schedule changes" : "Attention requested",
+            "body": kind == .scheduleChangeRequest ? "Your mate asked to revise the blocking schedule. Please review and approve." : "Your mate activated an emergency block / requested a break. Please review in the app.",
+            // Optional routing for your backend / client
+            "route": kind == .scheduleChangeRequest ? "setup/review" : "home/alerts",
+            "createdAt": FieldValue.serverTimestamp(),
+            "unread": true
+        ]
+        do {
+            _ = try await collection.addDocument(data: payload)
+        } catch {
+            await MainActor.run { self.errorMessage = (error as NSError).localizedDescription }
+        }
+    }
 
     private func setupDocRef() -> DocumentReference? {
         guard let pairId else { return nil }
@@ -572,7 +687,7 @@ struct SharedSetupFlowView: View {
         }
     }
 
-    // MARK: - Step 1: App selection
+    // MARK: - Step 1: App selection (symmetric)
 
     private func submitMyAppSelection_TX() async {
         guard let ref = setupDocRef(), let uid else { return }
@@ -596,6 +711,7 @@ struct SharedSetupFlowView: View {
                     let phaseRaw = (data["phase"] as? String) ?? SetupPhaseLocal.awaitingASubmission.rawValue
                     guard let phase = SetupPhaseLocal(rawValue: phaseRaw) else { return nil }
 
+                    // Symmetric submission: A submits in awaitingASubmission; B submits in awaitingBSubmission
                     let canSubmitA = (myRole == "A" && phase == .awaitingASubmission)
                     let canSubmitB = (myRole == "B" && phase == .awaitingBSubmission)
                     guard canSubmitA || canSubmitB else {
@@ -611,6 +727,7 @@ struct SharedSetupFlowView: View {
                     data["answers"] = answers
                     data["submitted"] = submitted
                     data["updatedAt"] = FieldValue.serverTimestamp()
+                    // Hand off to partner approval
                     data["phase"] = canSubmitA ? SetupPhaseLocal.awaitingBApproval.rawValue : SetupPhaseLocal.awaitingAApproval.rawValue
 
                     txn.setData(data, forDocument: ref, merge: true)
@@ -666,14 +783,29 @@ struct SharedSetupFlowView: View {
                     approvedAnswers[partnerUid] = partnerPayload
                     data["approvedAnswers"] = approvedAnswers
 
-                    data["step"] = SetupStepID.weeklySchedule
-                    data["stepIndex"] = 1
-                    data["answers"] = [:]
-                    data["approvals"] = [:]
-                    data["submitted"] = [:]
-                    data["phase"] = SetupPhaseLocal.awaitingASubmission.rawValue
-                    data["updatedAt"] = FieldValue.serverTimestamp()
+                    // Symmetric handoff for Step 1:
+                    // If B just approved A's submission, move to awaitingBSubmission
+                    // If A just approved B's submission, advance to Step 2
+                    if role == "B", phase == .awaitingBApproval {
+                        data["phase"] = SetupPhaseLocal.awaitingBSubmission.rawValue
+                        // Reset B's submitted flag so they can submit their own
+                        var submitted = (data["submitted"] as? [String: Bool]) ?? [:]
+                        submitted[myUid] = false
+                        data["submitted"] = submitted
 
+                        // Clear approvals for next leg
+                        data["approvals"] = [:]
+                    } else if role == "A", phase == .awaitingAApproval {
+                        // Move to weekly schedule
+                        data["step"] = SetupStepID.weeklySchedule
+                        data["stepIndex"] = 1
+                        data["answers"] = [:]
+                        data["approvals"] = [:]
+                        data["submitted"] = [:]
+                        data["phase"] = SetupPhaseLocal.awaitingASubmission.rawValue
+                    }
+
+                    data["updatedAt"] = FieldValue.serverTimestamp()
                     txn.setData(data, forDocument: ref, merge: true)
                     return nil
                 } catch { errorPtr?.pointee = error as NSError; return nil }
@@ -683,7 +815,7 @@ struct SharedSetupFlowView: View {
         }
     }
 
-    // MARK: - Step 2: Weekly schedule
+    // MARK: - Step 2: Weekly schedule (already symmetric)
 
     private func submitMyWeeklyPlan_TX() async {
         guard let ref = setupDocRef(), let uid else { return }
@@ -707,6 +839,7 @@ struct SharedSetupFlowView: View {
                     let phaseRaw = (data["phase"] as? String) ?? SetupPhaseLocal.awaitingASubmission.rawValue
                     guard let phase = SetupPhaseLocal(rawValue: phaseRaw) else { return nil }
 
+                    // Keep Step 2 symmetric (both can submit in their turn)
                     let canSubmitA = (myRole == "A" && phase == .awaitingASubmission)
                     let canSubmitB = (myRole == "B" && phase == .awaitingBSubmission)
                     guard canSubmitA || canSubmitB else {
@@ -880,6 +1013,7 @@ struct SharedSetupFlowView: View {
                     return nil
                 } catch { errorPtr?.pointee = error as NSError; return nil }
             }
+            await notifyPartnerOfRequest(kind: .scheduleChangeRequest)
         } catch {
             await MainActor.run { self.errorMessage = (error as NSError).localizedDescription }
         }
@@ -989,6 +1123,151 @@ struct SharedSetupFlowView: View {
             ReportingScheduler.shared.refreshMonitoringFromShared()
         }
     }
+
+    // MARK: - Small subviews
+
+    private struct AuthorizationGateView: View {
+        @Binding var isAuthorized: Bool
+        @Binding var lastMessage: String
+        let brand: BrandPalette
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    Image(systemName: isAuthorized ? "checkmark.shield.fill" : "exclamationmark.triangle.fill")
+                        .foregroundStyle(isAuthorized ? .green : .yellow)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Screen Time access")
+                            .font(.headline)
+                        Text(isAuthorized ? "Ready to enforce blocks." : "We need permission to block gambling apps across your device.")
+                            .font(.footnote)
+                            .foregroundStyle(brand.secondaryText)
+                    }
+                    Spacer()
+                }
+
+                if !isAuthorized {
+                    Button {
+                        Task { await requestAuthorization() }
+                    } label: {
+                        Label("Enable Screen Time access", systemImage: "lock.shield")
+                            .fontWeight(.semibold)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(brand.accent)
+                }
+
+                if !lastMessage.isEmpty {
+                    Text(lastMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(brand.fieldBackground)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(brand.cardStroke, lineWidth: 1)
+            )
+        }
+
+        @MainActor
+        private func requestAuthorization() async {
+            do {
+                try await AuthorizationCenter.shared.requestAuthorization(for: .individual)
+                isAuthorized = true
+                lastMessage = "Screen Time access approved."
+                SharedConfigStore.save(isAuthorized: true)
+                postConfigDidChangeDarwinNotification()
+                ReportingScheduler.shared.refreshMonitoringFromShared()
+            } catch {
+                isAuthorized = false
+                lastMessage = (error as NSError).localizedDescription
+                SharedConfigStore.save(isAuthorized: false)
+                postConfigDidChangeDarwinNotification()
+            }
+        }
+    }
+
+    private struct EmergencyBlockNowCard: View {
+        let brand: BrandPalette
+        var onActivate: () -> Void
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
+                    Image(systemName: "hand.raised.fill")
+                        .foregroundStyle(.red)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Block everything now")
+                            .font(.headline)
+                        Text("Immediate protection — blocks all gambling until your mate approves a break.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+
+                Button {
+                    onActivate()
+                } label: {
+                    Label("Block everything now", systemImage: "lock.shield.fill")
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(brand.fieldBackground)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(brand.cardStroke, lineWidth: 1)
+            )
+        }
+    }
+
+    private struct PartnerScheduleCard: View {
+        let brand: BrandPalette
+        let partnerName: String
+        let approvedPlan: WeeklyBlockPlan?
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
+                    Image(systemName: "calendar")
+                        .foregroundStyle(brand.accent)
+                    Text("\(partnerName.isEmpty ? "Your mate" : partnerName)’s schedule")
+                        .font(.headline)
+                    Spacer()
+                }
+
+                if let plan = approvedPlan {
+                    ReadOnlyPlanView(plan: plan, brand: brand)
+                } else {
+                    Text("No approved schedule yet.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(brand.fieldBackground)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(brand.cardStroke, lineWidth: 1)
+            )
+        }
+    }
 }
 
 // MARK: - Header + Info
@@ -1037,9 +1316,9 @@ private struct InfoCarousel: View {
     @State private var index = 0
 
     private let slides: [(String, String, String)] = [
-        ("shield.lefthalf.filled", "Block gambling temptations", "Pick betting, casino and other risky apps."),
-        ("clock.badge.checkmark", "Agree on hours", "Choose windows that support each other."),
-        ("person.2.fill", "Approve each other", "Only one phone is active at a time. Submit, approve, then swap.")
+        ("shield.lefthalf.filled", "Stop gambling temptations", "Block betting, casino and similar apps — system‑level, no loopholes."),
+        ("person.2.fill", "Set it up together", "Sit side‑by‑side. You submit, your mate approves. Then swap."),
+        ("clock.badge.checkmark", "Agree safe hours", "Choose blocking windows that support your goals.")
     ]
 
     var body: some View {
@@ -1207,6 +1486,21 @@ private struct MateOverviewCard: View {
                 Spacer()
             }
 
+            if !approvedSelection.applicationTokens.isEmpty {
+                ForEach(Array(approvedSelection.applicationTokens).prefix(3), id: \.self) { token in
+                    HStack(spacing: 8) {
+                        Image(systemName: "app.fill").foregroundStyle(brand.secondaryText)
+                        Text(readableAppName(token)).font(.footnote)
+                        Spacer()
+                    }
+                }
+                if approvedSelection.applicationTokens.count > 3 {
+                    Text("+ \(approvedSelection.applicationTokens.count - 3) more apps")
+                        .font(.caption)
+                        .foregroundStyle(brand.secondaryText)
+                }
+            }
+
             // Plan summary
             if let plan = approvedPlan {
                 HStack(spacing: 8) {
@@ -1308,9 +1602,16 @@ private struct MateOverviewCard: View {
         }
         return raw
     }
+
+    private func readableAppName(_ token: ApplicationToken) -> String {
+        if let id = try? JSONEncoder().encode(token).base64EncodedString(), let cached = SharedConfigStore.appName(for: id) {
+            return cached
+        }
+        return String(describing: token)
+    }
 }
 
-// MARK: - Step 1 UI: App selection
+// MARK: - Step 1 UI: App selection (symmetric)
 
 private struct AppSelectionStepView: View {
     @Binding var selection: FamilyActivitySelection
@@ -1332,9 +1633,9 @@ private struct AppSelectionStepView: View {
                 Image(systemName: "dice.fill")
                     .foregroundStyle(brand.accent)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Which gambling apps should be blocked?")
+                    Text("Choose gambling apps to block")
                         .font(.headline)
-                    Text("Choose categories and apps. Submit your selection, then your mate will approve it.")
+                    Text("Do this together. You propose, your mate approves — then swap.")
                         .foregroundStyle(brand.secondaryText)
                         .font(.footnote)
                 }
@@ -1346,26 +1647,49 @@ private struct AppSelectionStepView: View {
                     .font(.callout)
                     .foregroundStyle(brand.secondaryText)
                 Spacer()
-                Button {
-                    onOpenPicker()
-                } label: {
-                    Label("Choose apps", systemImage: "slider.horizontal.3")
-                        .font(.subheadline.weight(.semibold))
+                if canEdit {
+                    Button {
+                        onOpenPicker()
+                    } label: {
+                        Label("Choose apps", systemImage: "slider.horizontal.3")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .buttonStyle(.bordered)
                 }
-                .buttonStyle(.bordered)
-                .disabled(!canEdit)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                if !selection.applicationTokens.isEmpty {
+                    ForEach(Array(selection.applicationTokens).prefix(5), id: \.self) { token in
+                        HStack(spacing: 8) {
+                            Image(systemName: "app.fill").foregroundStyle(brand.secondaryText)
+                            Text(readableAppName(token)).font(.footnote)
+                            Spacer()
+                        }
+                    }
+                    if selection.applicationTokens.count > 5 {
+                        Text("+ \(selection.applicationTokens.count - 5) more")
+                            .font(.caption)
+                            .foregroundStyle(brand.secondaryText)
+                    }
+                }
+                if !selection.categoryTokens.isEmpty {
+                    HStack(spacing: 8) {
+                        Image(systemName: "square.grid.2x2.fill").foregroundStyle(brand.secondaryText)
+                        Text(selection.categoryTokens.map { readableCategoryName($0) }.sorted().joined(separator: ", "))
+                            .font(.footnote)
+                            .foregroundStyle(brand.secondaryText)
+                        Spacer()
+                    }
+                }
             }
 
             StatusRow(mySubmitted: mySubmitted, partnerSubmitted: partnerSubmitted, brand: brand)
 
             VStack(alignment: .leading, spacing: 8) {
-                if role == "A", phase == .awaitingASubmission {
+                if (role == "A" && phase == .awaitingASubmission) || (role == "B" && phase == .awaitingBSubmission) {
                     PrimaryActionButton(title: "Submit your selection", isLoading: isSaving, brand: brand, action: onSubmit, disabled: selectionIsEmpty)
-                } else if role == "B", phase == .awaitingBApproval {
-                    PrimaryActionButton(title: "Approve mate’s selection", isLoading: isSaving, brand: brand, action: onApprove)
-                } else if role == "B", phase == .awaitingBSubmission {
-                    PrimaryActionButton(title: "Submit your selection", isLoading: isSaving, brand: brand, action: onSubmit, disabled: selectionIsEmpty)
-                } else if role == "A", phase == .awaitingAApproval {
+                } else if (role == "B" && phase == .awaitingBApproval) || (role == "A" && phase == .awaitingAApproval) {
                     PrimaryActionButton(title: "Approve mate’s selection", isLoading: isSaving, brand: brand, action: onApprove)
                 } else if phase == .complete {
                     Label("Completed", systemImage: "checkmark.circle.fill")
@@ -1385,12 +1709,8 @@ private struct AppSelectionStepView: View {
     }
 
     private var canEdit: Bool {
-        switch (role, phase) {
-        case ("A", .awaitingASubmission), ("B", .awaitingBSubmission):
-            return true
-        default:
-            return false
-        }
+        // Either role may edit during their submission phase
+        return (role == "A" && phase == .awaitingASubmission) || (role == "B" && phase == .awaitingBSubmission)
     }
 
     private var selectionIsEmpty: Bool {
@@ -1400,11 +1720,24 @@ private struct AppSelectionStepView: View {
     private var summary: String {
         let apps = selection.applicationTokens.count
         let cats = selection.categoryTokens.count
-        if apps == 0 && cats == 0 { return "No selection yet." }
+        if apps == 0 && cats == 0 { return "No apps or categories selected yet." }
         var parts: [String] = []
         if apps > 0 { parts.append("\(apps) app\(apps == 1 ? "" : "s")") }
         if cats > 0 { parts.append("\(cats) categor\(cats == 1 ? "y" : "ies")") }
         return parts.joined(separator: " + ")
+    }
+
+    private func readableAppName(_ token: ApplicationToken) -> String {
+        if let id = try? JSONEncoder().encode(token).base64EncodedString(), let cached = SharedConfigStore.appName(for: id) {
+            return cached
+        }
+        // Fallback: show bundle identifier if available via description
+        return String(describing: token)
+    }
+
+    private func readableCategoryName(_ token: ActivityCategoryToken) -> String {
+        // Use token.description or rawValue as a readable fallback
+        return String(describing: token)
     }
 }
 
@@ -1472,6 +1805,20 @@ private struct WeeklyScheduleStepView: View {
                             withAnimation { collapsed = Array(repeating: true, count: plan.days.count) }
                         } label: { Text("Collapse all").font(.footnote.weight(.semibold)) }
                         .buttonStyle(.bordered)
+                        .disabled(isApprovalPhase)
+
+                        // Quick selects
+                        Menu {
+                            Button("Weekends (Sat & Sun, 9am–9pm)") {
+                                applyWeekendsPreset()
+                            }
+                            Button("Full block (all day, every day)") {
+                                applyFullBlockPreset()
+                            }
+                        } label: {
+                            Label("Quick select", systemImage: "wand.and.stars")
+                                .font(.footnote.weight(.semibold))
+                        }
                         .disabled(isApprovalPhase)
 
                         Spacer()
@@ -1550,6 +1897,28 @@ private struct WeeklyScheduleStepView: View {
 
     private var isValid: Bool {
         plan.days.contains { $0.enabled && !$0.ranges.isEmpty }
+    }
+
+    private func applyWeekendsPreset() {
+        // Enable only Saturday and Sunday, 09:00–21:00
+        for i in plan.days.indices {
+            let wd = plan.days[i].weekday
+            if wd == .saturday || wd == .sunday {
+                plan.days[i].enabled = true
+                plan.days[i].ranges = [TimeRange(startMinutes: 9*60, endMinutes: 21*60)]
+            } else {
+                plan.days[i].enabled = false
+                plan.days[i].ranges = []
+            }
+        }
+    }
+
+    private func applyFullBlockPreset() {
+        // Enable all days, 00:00–23:59
+        for i in plan.days.indices {
+            plan.days[i].enabled = true
+            plan.days[i].ranges = [TimeRange(startMinutes: 0, endMinutes: 23*60 + 59)]
+        }
     }
 
     @ViewBuilder
@@ -1830,18 +2199,29 @@ private struct RangeSlider: View {
             let endX = x(for: end, width: width)
 
             ZStack(alignment: .leading) {
-                Capsule().fill(Color.secondary.opacity(0.2))
+                RoundedRectangle(cornerRadius: trackHeight/2, style: .continuous)
+                    .fill(Color.secondary.opacity(0.15))
                     .frame(height: trackHeight)
 
-                Capsule().fill(accent)
+                RoundedRectangle(cornerRadius: trackHeight/2, style: .continuous)
+                    .fill(LinearGradient(colors: [accent.opacity(0.85), accent], startPoint: .leading, endPoint: .trailing))
                     .frame(width: max(0, endX - startX), height: trackHeight)
                     .offset(x: startX)
 
                 // Start thumb
-                Circle()
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(.white)
-                    .overlay(Circle().stroke(accent, lineWidth: 2))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(accent, lineWidth: 2)
+                    )
+                    .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 2)
                     .frame(width: thumbSize, height: thumbSize)
+                    .overlay(
+                        Image(systemName: "line.3.horizontal")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(accent.opacity(0.9))
+                    )
                     .offset(x: startX - thumbSize/2, y: -(thumbSize - trackHeight)/2)
                     .gesture(
                         DragGesture()
@@ -1854,10 +2234,19 @@ private struct RangeSlider: View {
                     )
 
                 // End thumb
-                Circle()
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(.white)
-                    .overlay(Circle().stroke(accent, lineWidth: 2))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .stroke(accent, lineWidth: 2)
+                    )
+                    .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 2)
                     .frame(width: thumbSize, height: thumbSize)
+                    .overlay(
+                        Image(systemName: "line.3.horizontal")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(accent.opacity(0.9))
+                    )
                     .offset(x: endX - thumbSize/2, y: -(thumbSize - trackHeight)/2)
                     .gesture(
                         DragGesture()
@@ -1902,3 +2291,4 @@ private extension CGFloat {
         return Swift.max(range.lowerBound, Swift.min(range.upperBound, self))
     }
 }
+

@@ -2,6 +2,7 @@ import SwiftUI
 import FamilyControls
 import ManagedSettings
 import FirebaseAuth
+import FirebaseFirestore
 
 struct WhisprHomeView: View {
     @Environment(AppController.self) private var appController
@@ -25,7 +26,15 @@ struct WhisprHomeView: View {
     @State private var showingSetupFlow = false
     @State private var isPresentingGuard = false
 
+    // Break request UI state
+    @State private var requestedMinutes: Int = 5
+    @State private var canRequestAfter: Date = Date()
+    @State private var requestCountdownTimer: Timer?
+    @State private var remainingRequestSeconds: Int = 5
+
     private let missionLine = "Stop gambling together — Australians lose over $25B each year. With whistl, mates keep each other on track."
+
+    private var db: Firestore { Firestore.firestore() }
 
     var body: some View {
         ZStack {
@@ -39,7 +48,7 @@ struct WhisprHomeView: View {
 
                     // Blocking status + selection + schedule (read-only)
                     blockingStatusSection
-                    selectionSummarySection
+//                    selectionSummarySection
                     scheduleSection
 
                     blockedTimeCard
@@ -50,29 +59,29 @@ struct WhisprHomeView: View {
                     requestBreakControls
 
                     // Screen Time report
-                    Button {
-                        showingReport = true
-                    } label: {
-                        Label("View Screen Time report", systemImage: "chart.bar.doc.horizontal")
-                            .frame(maxWidth: .infinity)
-                            .fontWeight(.semibold)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(brand.accent)
+//                    Button {
+//                        showingReport = true
+//                    } label: {
+//                        Label("View Screen Time report", systemImage: "chart.bar.doc.horizontal")
+//                            .frame(maxWidth: .infinity)
+//                            .fontWeight(.semibold)
+//                    }
+//                    .buttonStyle(.bordered)
+//                    .tint(brand.accent)
 
                     // Logout
-                    Button {
-                        do { try appController.signOut() } catch { }
-                    } label: {
-                        Label("Log out", systemImage: "rectangle.portrait.and.arrow.right")
-                            .frame(maxWidth: .infinity)
-                            .fontWeight(.semibold)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(.red)
-                    .padding(.top, 8)
-
-                    Spacer(minLength: 0)
+//                    Button {
+//                        do { try appController.signOut() } catch { }
+//                    } label: {
+//                        Label("Log out", systemImage: "rectangle.portrait.and.arrow.right")
+//                            .frame(maxWidth: .infinity)
+//                            .fontWeight(.semibold)
+//                    }
+//                    .buttonStyle(.bordered)
+//                    .tint(.red)
+//                    .padding(.top, 8)
+//
+//                    Spacer(minLength: 0)
                 }
                 .padding(20)
             }
@@ -109,6 +118,11 @@ struct WhisprHomeView: View {
             NavigationStack {
                 SharedSetupFlowView()
                     .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Cancel") { showingSetupFlow = false }
+                        }
+                    }
             }
             .tint(brand.accent)
             .interactiveDismissDisabled(false)
@@ -122,6 +136,7 @@ struct WhisprHomeView: View {
             )
             refreshAnalytics()
             startTicker()
+            startRequestCooldown()
         }
         .onChange(of: appController.pairId) { _ in
             model.updatePairContext(
@@ -139,6 +154,7 @@ struct WhisprHomeView: View {
         }
         .onDisappear {
             stopTicker()
+            stopRequestCooldownTimer()
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
             refreshAnalytics()
@@ -371,7 +387,7 @@ struct WhisprHomeView: View {
 
             if model.hasPendingPartnerRequest {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Your partner requested a 5‑minute break.")
+                    Text("Your partner requested a break.")
                         .font(.callout)
 
                     HStack {
@@ -410,6 +426,7 @@ struct WhisprHomeView: View {
             }
         }
         .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(brand.fieldBackground)
@@ -451,15 +468,35 @@ struct WhisprHomeView: View {
                     .buttonStyle(.bordered)
                 }
             } else {
-                Button {
-                    Task { await model.requestBreak() }
-                } label: {
-                    Label("Request 5‑minute break", systemImage: "paperplane.fill")
-                        .frame(maxWidth: .infinity)
-                        .fontWeight(.semibold)
+                VStack(alignment: .leading, spacing: 8) {
+                    // Duration picker 5–15 minutes
+                    HStack {
+                        Text("Duration")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Stepper(value: Binding(
+                            get: { requestedMinutes },
+                            set: { newVal in
+                                requestedMinutes = min(15, max(5, newVal))
+                                restartRequestCooldown()
+                            }
+                        ), in: 5...15) {
+                            Text("\(requestedMinutes) minutes")
+                        }
+                        .labelsHidden()
+                    }
+
+                    Button {
+                        Task { await model.requestBreak(durationMinutes: requestedMinutes) }
+                    } label: {
+                        Label(canRequestNow ? "Request \(requestedMinutes)-minute break" : "Think for \(remainingRequestSeconds)s…", systemImage: "paperplane.fill")
+                            .frame(maxWidth: .infinity)
+                            .fontWeight(.semibold)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!(appController.isPaired && appController.partnerUID != nil) || !canRequestNow)
                 }
-                .buttonStyle(.bordered)
-                .disabled(!(appController.isPaired && appController.partnerUID != nil))
             }
 
             if let err = model.lastBreakRequestError {
@@ -478,8 +515,52 @@ struct WhisprHomeView: View {
     // MARK: - Helpers
 
     private func presentSetupFlowSafely() {
-        guard appController.isPaired else { return }
-        showingSetupFlow = true
+        guard appController.isPaired, let pid = appController.pairId else { return }
+        // Reset the setup workflow back to Step 1 once, then present the flow.
+        Task {
+            do {
+                let ref = db.collection("pairSpaces").document(pid).collection("setup").document("current")
+                try await ref.setData([
+                    "step": "appSelection",
+                    "stepIndex": 0,
+                    "answers": [:],
+                    "approvals": [:],
+                    "submitted": [:],
+                    "approvedAnswers": [:],
+                    "phase": SetupPhase.awaitingASubmission.rawValue,
+                    "updatedAt": FieldValue.serverTimestamp()
+                ], merge: true)
+            } catch {
+                // If this fails, we still present; SharedSetupFlow will enforce transitions.
+            }
+            showingSetupFlow = true
+        }
+    }
+
+    private var canRequestNow: Bool {
+        Date() >= canRequestAfter
+    }
+
+    private func startRequestCooldown() {
+        canRequestAfter = Date().addingTimeInterval(5)
+        remainingRequestSeconds = 5
+        stopRequestCooldownTimer()
+        requestCountdownTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
+            let remain = Int(max(0, self.canRequestAfter.timeIntervalSinceNow.rounded(.up)))
+            self.remainingRequestSeconds = remain
+            if remain <= 0 {
+                self.stopRequestCooldownTimer()
+            }
+        }
+    }
+
+    private func restartRequestCooldown() {
+        startRequestCooldown()
+    }
+
+    private func stopRequestCooldownTimer() {
+        requestCountdownTimer?.invalidate()
+        requestCountdownTimer = nil
     }
 
     private var breakCountdownText: String {
@@ -661,3 +742,4 @@ private struct BlockStatusBadge: View {
 #Preview {
     NavigationStack { WhisprHomeView() }.environment(AppController())
 }
+

@@ -28,17 +28,17 @@ struct FocusMenuView: View {
                     statusHeader
                 }
 
-                Section("What’s blocked") {
-                    let sel = SharedConfigStore.loadSelection()
-                    HStack {
-                        Text("Selection")
-                        Spacer()
-                        Text(selectionSummary(sel))
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.trailing)
-                    }
-                    .font(.callout)
-                }
+//                Section("What’s blocked") {
+//                    let sel = SharedConfigStore.loadSelection()
+//                    HStack {
+//                        Text("Selection")
+//                        Spacer()
+//                        Text(selectionSummary(sel))
+//                            .foregroundStyle(.secondary)
+//                            .multilineTextAlignment(.trailing)
+//                    }
+//                    .font(.callout)
+//                }
 
                 Section("Schedule") {
                     if model.isScheduleEnabled {

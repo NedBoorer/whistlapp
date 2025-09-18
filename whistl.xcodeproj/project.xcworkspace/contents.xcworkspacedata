@@ -5,42 +5,9 @@
       location = "self:">
    </FileRef>
    <FileRef
-      location = "group:ReportingScheduler.swift">
+      location = "group:PartnerInboxListener.swift">
    </FileRef>
    <FileRef
-      location = "group:DeviceActivityReportContexts.swift">
-   </FileRef>
-   <FileRef
-      location = "group:ReportModels.swift">
-   </FileRef>
-   <FileRef
-      location = "group:HomeReport.swift">
-   </FileRef>
-   <FileRef
-      location = "group:TopAppsReport.swift">
-   </FileRef>
-   <FileRef
-      location = "group:TotalActivityReport.swift">
-   </FileRef>
-   <FileRef
-      location = "group:TotalPickupsReport.swift">
-   </FileRef>
-   <FileRef
-      location = "group:WidgetReport.swift">
-   </FileRef>
-   <FileRef
-      location = "group:HomeReportView.swift">
-   </FileRef>
-   <FileRef
-      location = "group:TopThreeView.swift">
-   </FileRef>
-   <FileRef
-      location = "group:TotalActivityView.swift">
-   </FileRef>
-   <FileRef
-      location = "group:PickupsChartView.swift">
-   </FileRef>
-   <FileRef
-      location = "group:WidgetReportView.swift">
+      location = "group:PartnerInboxView.swift">
    </FileRef>
 </Workspace>

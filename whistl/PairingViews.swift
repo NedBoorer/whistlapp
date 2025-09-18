@@ -261,16 +261,11 @@ struct WaitingForPartnerView: View {
 
     var body: some View {
         Group {
-            if partnerJoined {
-                Label("Partner linked! You can start using whistl.", systemImage: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-            } else {
-                HStack(spacing: 8) {
-                    ProgressView()
-                    Text("Waiting…")
-                }
-                .foregroundStyle(brand.secondaryText)
+            HStack(spacing: 8) {
+                ProgressView()
+                Text("Waiting…")
             }
+            .foregroundStyle(brand.secondaryText)
         }
         .task(id: appController.pairId) {
             await monitorPair()
@@ -292,3 +287,4 @@ struct WaitingForPartnerView: View {
 #Preview {
     NavigationStack { PairingGateView() }.environment(AppController())
 }
+

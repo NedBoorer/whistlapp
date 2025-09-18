@@ -237,9 +237,10 @@ final class FocusScheduleViewModel {
                     let requestedAt = ts.dateValue()
                     if lastSeenRequestedAt == nil || requestedAt > (lastSeenRequestedAt ?? .distantPast) {
                         lastSeenRequestedAt = requestedAt
+                        let mins = (data["durationMinutes"] as? Int) ?? 5
                         WhistlNotifier.scheduleAttemptNotification(
                             title: "Break request",
-                            body: "Your partner requested a 5‑minute break."
+                            body: "Your partner requested a \(mins)‑minute break."
                         )
                     }
                 }
@@ -431,9 +432,21 @@ final class FocusScheduleViewModel {
         Task { await writePauseUntil(nil, forOwner: myUID) }
     }
 
+    // Updated: grant requested duration (5–15 minutes)
     func grantFiveMinuteBreakToPartner(now: Date = Date()) async {
-        guard let _ = pairId, let target = partnerUID else { return }
-        let until = now.addingTimeInterval(5 * 60)
+        guard let pid = pairId, let target = partnerUID, !pid.isEmpty, !target.isEmpty else { return }
+        // Read requested duration from partner's request doc
+        let reqRef = db.collection("pairSpaces").document(pid).collection("breakRequests").document(target)
+        var minutes = 5
+        do {
+            let snap = try await reqRef.getDocument()
+            if let data = snap.data(), let requested = data["durationMinutes"] as? Int {
+                minutes = max(5, min(15, requested))
+            }
+        } catch {
+            // default to 5
+        }
+        let until = now.addingTimeInterval(TimeInterval(minutes * 60))
         await writePauseUntil(until, forOwner: target)
         await approvePartnerBreakRequest()
     }
@@ -458,14 +471,17 @@ final class FocusScheduleViewModel {
         }
     }
 
-    func requestBreak() async {
+    // Updated: accept durationMinutes
+    func requestBreak(durationMinutes: Int) async {
+        let bounded = max(5, min(15, durationMinutes))
         guard let pid = pairId, let owner = myUID, !pid.isEmpty, !owner.isEmpty else { return }
         let ref = db.collection("pairSpaces").document(pid).collection("breakRequests").document(owner)
         do {
             try await ref.setData([
                 "status": "pending",
                 "requestedAt": FieldValue.serverTimestamp(),
-                "requestedBy": owner
+                "requestedBy": owner,
+                "durationMinutes": bounded
             ], merge: true)
             await MainActor.run {
                 self.isMyBreakRequestPending = true
