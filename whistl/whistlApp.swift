@@ -5,6 +5,7 @@
 
 import SwiftUI
 import FirebaseCore
+import FirebaseAuth
 
 @main
 struct whistlApp: App {
@@ -32,6 +33,13 @@ struct whistlApp: App {
                     ContentView()
                         .task {
                             WhistlNotifier.requestAuthorizationIfNeeded()
+                            // Start risk place alerts if enabled
+                            LocationMonitor.shared.updatePairContext(
+                                pairId: appController.pairId,
+                                myUID: Auth.auth().currentUser?.uid,
+                                partnerUID: appController.partnerUID
+                            )
+                            LocationMonitor.shared.start()
                         }
                 }
             }

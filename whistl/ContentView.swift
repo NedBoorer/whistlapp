@@ -8,6 +8,8 @@
 import SwiftUI
 
 struct ContentView: View {
+
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(AppController.self) private var appController
 
     private let brand = BrandPalette()
@@ -17,47 +19,53 @@ struct ContentView: View {
     }
 
     var body: some View {
-        ZStack {
-            brand.background()
+            ZStack {
+                brand.background()
 
-            Group {
-                switch appController.authState {
-                case .undefined:
-                    ProgressView()
-                        .tint(brand.accent)
-
-                case .notAuthenticated:
-                    NavigationStack {
-                        WelcomeView()
-                            .toolbar { }
-                    }
-                    .tint(brand.accent)
-
-                case .authenticated:
-                    switch appController.pairingLoadState {
-                    case .unknown, .loading:
+                Group {
+                    switch appController.authState {
+                    case .undefined:
                         ProgressView()
                             .tint(brand.accent)
 
-                    case .unpaired:
+                    case .notAuthenticated:
                         NavigationStack {
-                            PairingGateView()
+                            WelcomeView()
+                                .toolbar { }
                         }
                         .tint(brand.accent)
 
-                    case .paired:
-                        // If setup complete -> show HomeTabs. Otherwise show setup flow.
-                        if isSetupComplete {
-                            HomeTabs()
-                        } else {
+                    case .authenticated:
+                        switch appController.pairingLoadState {
+                        case .unknown, .loading:
+                            ProgressView()
+                                .tint(brand.accent)
+
+                        case .unpaired:
                             NavigationStack {
-                                SharedSetupFlowView()
-                                    .navigationBarTitleDisplayMode(.inline)
+                                PairingGateView()
                             }
                             .tint(brand.accent)
+
+                        case .paired:
+                            if isSetupComplete {
+                                HomeTabs()
+                            } else {
+                                NavigationStack {
+                                    SharedSetupFlowView()
+                                        .navigationBarTitleDisplayMode(.inline)
+                                }
+                                .tint(brand.accent)
+                            }
                         }
                     }
                 }
+            }
+
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase == .active else { return }
+            if appController.authState == .authenticated && appController.pairingLoadState == .paired && isSetupComplete {
+
             }
         }
     }

@@ -3,6 +3,7 @@ import FirebaseAuth
 import FirebaseFirestore
 import ManagedSettings
 import FamilyControls
+import CoreLocation
 
 struct HomeTabs: View {
     @Environment(AppController.self) private var appController
@@ -62,6 +63,39 @@ private struct SettingsTabView: View {
     @State private var alsoUnlink = false
     @State private var isResetting = false
     @State private var resetError: String?
+    
+    @State private var showRiskOnboarding = false
+    @State private var pendingEnableRisk = false
+    
+    @MainActor
+    private func riskStatus() -> (icon: String, message: String, color: Color) {
+        // Toggle state
+        if !LocationMonitor.shared.isEnabled {
+            return ("location.slash", "Off", .secondary)
+        }
+
+        // Pair context
+        let hasPair = (appController.pairId?.isEmpty == false) && (appController.partnerUID?.isEmpty == false)
+
+        // Location authorization
+        let status = CLLocationManager().authorizationStatus
+        switch status {
+        case .authorizedAlways:
+            if hasPair {
+                return ("checkmark.circle.fill", "Ready", .green)
+            } else {
+                return ("person.crop.circle.badge.exclamationmark", "Missing pair context", .yellow)
+            }
+        case .authorizedWhenInUse:
+            return ("exclamationmark.triangle.fill", "Needs Always Location Access", .yellow)
+        case .notDetermined:
+            return ("questionmark.circle.fill", "Awaiting permission", .yellow)
+        case .denied, .restricted:
+            return ("xmark.octagon.fill", "Location access denied", .red)
+        @unknown default:
+            return ("questionmark.circle", "Unknown state", .secondary)
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -106,6 +140,39 @@ private struct SettingsTabView: View {
                         Text(appController.isPaired ? "Paired" : "Unpaired")
                             .foregroundStyle(appController.isPaired ? .green : .secondary)
                     }
+                }
+
+                Section("Risk place alerts") {
+                    HStack {
+                        Text("Alert partner if I stay at a bar/casino 5+ minutes")
+                        Spacer()
+                        Toggle("", isOn: Binding(
+                            get: { LocationMonitor.shared.isEnabled },
+                            set: { newVal in
+                                if newVal {
+                                    pendingEnableRisk = true
+                                    showRiskOnboarding = true
+                                } else {
+                                    LocationMonitor.shared.isEnabled = false
+                                }
+                            }
+                        ))
+                        .labelsHidden()
+                    }
+                    .tint(brand.accent)
+                    Text("Sends an alert to your mate with 2‑hour cooldown per venue. Requires Always‑On Location.")
+                        .font(.caption)
+                        .foregroundStyle(brand.secondaryText)
+                    HStack(spacing: 8) {
+                        let status = riskStatus()
+                        Image(systemName: status.icon)
+                            .foregroundStyle(status.color)
+                        Text(status.message)
+                            .font(.caption)
+                            .foregroundStyle(status.color)
+                        Spacer()
+                    }
+                    .accessibilityElement(children: .combine)
                 }
 
                 Section("Reset") {
@@ -164,6 +231,20 @@ private struct SettingsTabView: View {
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
         .tint(brand.accent)
+        .sheet(isPresented: $showRiskOnboarding) {
+            RiskLocationOnboardingView(
+                onContinue: {
+                    LocationMonitor.shared.isEnabled = true
+                    LocationMonitor.shared.start()
+                    showRiskOnboarding = false
+                    pendingEnableRisk = false
+                },
+                onCancel: {
+                    showRiskOnboarding = false
+                    pendingEnableRisk = false
+                }
+            )
+        }
     }
 
     // MARK: - Reset implementation

@@ -11,6 +11,8 @@ import FirebaseFirestore
 
 struct PairingGateView: View {
     @Environment(AppController.self) private var appController
+    @State private var showScanner = false
+    @State private var showUnifiedJoin = false
     private let brand = BrandPalette()
 
     var body: some View {
@@ -52,15 +54,18 @@ struct PairingGateView: View {
             .buttonStyle(.borderedProminent)
             .disabled(appController.authState != .authenticated)
 
-            NavigationLink {
-                JoinPairView()
+            Button {
+                showUnifiedJoin = true
             } label: {
-                Label("Join with invite code", systemImage: "rectangle.and.pencil.and.ellipsis")
+                Label("Join", systemImage: "person.crop.circle.badge.plus")
                     .frame(maxWidth: .infinity)
                     .fontWeight(.semibold)
             }
             .buttonStyle(.bordered)
             .disabled(appController.authState != .authenticated)
+            .sheet(isPresented: $showUnifiedJoin) {
+                JoinPairUnifiedSheet()
+            }
 
             Spacer()
         }
@@ -110,6 +115,13 @@ struct CreatePairView: View {
                     UIPasteboard.general.string = code
                 } label: {
                     Label("Copy code", systemImage: "doc.on.doc")
+                }
+                .buttonStyle(.bordered)
+
+                NavigationLink {
+                    QRGeneratorView(code: code)
+                } label: {
+                    Label("Show QR", systemImage: "qrcode")
                 }
                 .buttonStyle(.bordered)
 
@@ -173,6 +185,7 @@ struct JoinPairView: View {
     @State private var code: String = ""
     @State private var errorMessage: String?
     @State private var isJoining = false
+    @State private var showUnifiedJoin = false
     private let brand = BrandPalette()
 
     var body: some View {
@@ -195,62 +208,24 @@ struct JoinPairView: View {
                 .foregroundStyle(brand.secondaryText)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            TextField("Invite code", text: $code)
-                .textInputAutocapitalization(.characters)
-                .autocorrectionDisabled()
-                .textCase(.uppercase)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-                .background(
-                    RoundedRectangle(cornerRadius: brand.fieldCornerRadius, style: .continuous)
-                        .fill(brand.fieldBackground)
-                )
-
-            if let errorMessage {
-                Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.red)
-                    .font(.footnote)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
             Button {
-                Task { await join() }
+                showUnifiedJoin = true
             } label: {
-                if isJoining {
-                    ProgressView().tint(.white)
-                } else {
-                    Text("Join")
-                        .frame(maxWidth: .infinity)
-                        .fontWeight(.semibold)
-                }
+                Label("Join", systemImage: "person.crop.circle.badge.plus")
+                    .frame(maxWidth: .infinity)
+                    .fontWeight(.semibold)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(code.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isJoining || appController.authState != .authenticated)
+            .disabled(appController.authState != .authenticated)
+            .sheet(isPresented: $showUnifiedJoin) {
+                JoinPairUnifiedSheet()
+            }
 
             Spacer()
         }
         .padding()
         .navigationTitle("Join link")
         .navigationBarTitleDisplayMode(.inline)
-    }
-
-    private func join() async {
-        guard appController.authState == .authenticated else {
-            errorMessage = AppController.PairingError.notAuthenticated.localizedDescription
-            return
-        }
-        errorMessage = nil
-        isJoining = true
-        do {
-            try await appController.joinPair(using: code)
-        } catch {
-            if let e = error as? AppController.PairingError {
-                errorMessage = e.localizedDescription
-            } else {
-                errorMessage = (error as NSError).localizedDescription
-            }
-        }
-        isJoining = false
     }
 }
 
@@ -287,4 +262,3 @@ struct WaitingForPartnerView: View {
 #Preview {
     NavigationStack { PairingGateView() }.environment(AppController())
 }
-
